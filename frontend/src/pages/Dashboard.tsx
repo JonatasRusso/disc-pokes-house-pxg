@@ -17,8 +17,8 @@ export default function Dashboard() {
   const { data: pokemon   = [] } = useQuery({ queryKey: ["pokemon"],   queryFn: getPokemon });
 
   const upcoming = schedules
-    .filter((s) => ["pending", "confirmed"].includes(s.status))
-    .slice(0, 3);
+    .filter((s) => s.status !== "cancelled" && s.status !== "missed")
+    .slice(0, 5);
 
   const myPokemon = pokemon.filter((p) => p.assigned_to === user?.discord_id).slice(0, 6);
   const freePokemon = pokemon.filter((p) => !p.assigned_to).length;
@@ -45,6 +45,9 @@ export default function Dashboard() {
                 <div>
                   <p className="font-medium">
                     {s.difficulty} <span className="text-gray-500 text-xs font-normal">· toda semana</span>
+                    {s.organizer_id === user?.discord_id && (
+                      <span className="ml-2 text-[10px] bg-gray-700 text-gray-300 px-1.5 py-0.5 rounded">organizada por você</span>
+                    )}
                   </p>
                   <p className="text-gray-400 text-sm">
                     🔁 Toda <strong>{WEEKDAY_LABEL[s.weekday]}</strong> {String(s.hour).padStart(2, "0")}:00 → {String((s.hour + 3) % 24).padStart(2, "0")}:00

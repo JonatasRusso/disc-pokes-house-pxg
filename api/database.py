@@ -17,6 +17,7 @@ _MIGRATIONS = [
     "ALTER TABLE party_members ADD COLUMN IF NOT EXISTS character_id INTEGER",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS nick TEXT",
     "ALTER TABLE schedules ALTER COLUMN character_id DROP NOT NULL",  # admin pode criar PT sem se incluir
+    "ALTER TABLE schedules ADD COLUMN IF NOT EXISTS organizer_id TEXT",
 ]
 
 
