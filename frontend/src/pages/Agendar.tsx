@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { getCharacters, getFreeSlots, getMembers, createSchedule } from "../lib/api";
+import { getCharacters, getFreeSlots, getMembers, getCalendar, createSchedule } from "../lib/api";
 import { useAuth } from "../lib/useAuth";
 import WeeklySlots from "../components/WeeklySlots";
 import MemberPicker, { PartyMemberInput } from "../components/MemberPicker";
@@ -17,6 +17,7 @@ export default function Agendar() {
   const { data: characters = [] } = useQuery({ queryKey: ["characters"], queryFn: getCharacters });
   const { data: slots      = [] } = useQuery({ queryKey: ["free-slots"], queryFn: getFreeSlots });
   const { data: members    = [] } = useQuery({ queryKey: ["members"],    queryFn: getMembers });
+  const { data: parties    = [] } = useQuery({ queryKey: ["calendar"],   queryFn: getCalendar });
 
   const isAdmin = !!user?.is_admin;
 
@@ -158,7 +159,7 @@ export default function Agendar() {
           <label className="block text-sm text-gray-400 mb-2">
             Horário {slot && <span className="text-brand">— {new Date(slot).toLocaleString("pt-BR")}</span>}
           </label>
-          <WeeklySlots slots={slots} selected={slot} onSelect={setSlot} />
+          <WeeklySlots slots={slots} selected={slot} onSelect={setSlot} parties={parties} />
         </div>
 
         {/* Membros da party */}

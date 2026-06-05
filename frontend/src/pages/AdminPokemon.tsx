@@ -4,9 +4,9 @@ import { getPokemon, createPokemon, unassignPokemon, Pokemon } from "../lib/api"
 
 const CATEGORIES = ["A", "B", "C"] as const;
 const CATEGORY_LABEL: Record<string, string> = {
-  A: "Categoria A",
-  B: "Categoria B",
-  C: "Categoria C",
+  A: "Tank",
+  B: "DPS",
+  C: "Sup",
 };
 
 export default function AdminPokemon() {

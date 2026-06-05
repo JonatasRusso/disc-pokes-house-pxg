@@ -79,11 +79,9 @@ function LogRow({ entry: h }: { entry: HistoryEntry }) {
   const colorClass = ACTION_COLOR[h.action] ?? "bg-gray-800 text-gray-400";
   return (
     <div className="bg-gray-900 rounded-lg px-4 py-3 flex items-center gap-3 text-sm">
-      <span className="text-gray-600 w-16 shrink-0">#{h.id}</span>
       <span className={`text-xs px-2 py-0.5 rounded-full font-medium shrink-0 ${colorClass}`}>{h.action}</span>
-      <span className="text-gray-500 shrink-0">{h.entity_type} {h.entity_id ? `#${h.entity_id}` : ""}</span>
-      {h.detail && <span className="text-gray-600 text-xs font-mono truncate">{h.detail}</span>}
-      <span className="ml-auto text-gray-600 text-xs shrink-0 whitespace-nowrap">
+      <span className="flex-1 min-w-0 truncate">{h.summary}</span>
+      <span className="text-gray-600 text-xs shrink-0 whitespace-nowrap">
         {new Date(h.happened_at).toLocaleString("pt-BR")}
       </span>
     </div>
