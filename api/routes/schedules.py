@@ -3,7 +3,7 @@ import os
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.auth import get_current_user, require_admin
@@ -77,11 +77,16 @@ class RescheduleIn(BaseModel):
 
 @router.get("")
 async def list_schedules(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    # PTs onde o usuário é membro OU que ele organizou (admin sem se incluir)
+    member_party_ids = select(PartyMember.party_id).where(PartyMember.user_id == user.discord_id)
     result = await db.execute(
         select(Schedule)
-        .join(Party)
-        .join(PartyMember, PartyMember.party_id == Party.id)
-        .where(PartyMember.user_id == user.discord_id)
+        .where(
+            or_(
+                Schedule.organizer_id == user.discord_id,
+                Schedule.party_id.in_(member_party_ids),
+            )
+        )
         .order_by(Schedule.start_time)
     )
     schedules = result.scalars().unique().all()
@@ -186,6 +191,7 @@ async def create_schedule(body: ScheduleIn, user: User = Depends(get_current_use
     schedule = Schedule(
         party_id=party.id,
         character_id=body.character_id if include_self else None,
+        organizer_id=user.discord_id,
         difficulty=body.difficulty,
         start_time=start_time,
         end_time=end_time,
@@ -320,9 +326,10 @@ def _schedule_dict(s: Schedule) -> dict:
         "id":         s.id,
         "party_id":   s.party_id,
         "difficulty": s.difficulty,
-        "start_time": s.start_time.isoformat(),
-        "end_time":   s.end_time.isoformat(),
-        "weekday":    s.start_time.weekday(),  # 0=Seg .. 6=Dom
-        "hour":       s.start_time.hour,
-        "status":     s.status,
+        "start_time":   s.start_time.isoformat(),
+        "end_time":     s.end_time.isoformat(),
+        "weekday":      s.start_time.weekday(),  # 0=Seg .. 6=Dom
+        "hour":         s.start_time.hour,
+        "organizer_id": s.organizer_id,
+        "status":       s.status,
     }

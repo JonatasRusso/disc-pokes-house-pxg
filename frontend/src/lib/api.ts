@@ -85,6 +85,7 @@ export interface Schedule {
   end_time: string;
   weekday: number;  // 0=Seg .. 6=Dom
   hour: number;
+  organizer_id: string | null;
   status: "pending" | "confirmed" | "rescheduled" | "missed" | "cancelled";
 }
 
