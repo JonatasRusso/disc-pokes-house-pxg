@@ -4,9 +4,33 @@ from discord.ext import commands
 from sqlalchemy import select
 from api.database import AsyncSessionLocal
 from api.models import Pokemon, User
+from bot.config import DISCORD_POKEMON_CHANNEL_ID
 
 
 CATEGORY_LABEL = {"A": "Tank", "B": "DPS", "C": "Sup"}
+
+
+def build_pokemon_embed(pokemon: Pokemon, guild: discord.Guild | None) -> discord.Embed:
+    """Embed de um pokémon no painel, com status de uso e footer com o ID."""
+    if pokemon.assigned_to:
+        member = guild.get_member(int(pokemon.assigned_to)) if guild else None
+        who = member.display_name if member else pokemon.assigned_to
+        status = f"🟢 Em uso por **{who}**"
+        color = discord.Color.green()
+    else:
+        status = "⚪ Livre"
+        color = discord.Color.greyple()
+
+    embed = discord.Embed(
+        title=pokemon.name,
+        description=f"`{CATEGORY_LABEL.get(pokemon.category, pokemon.category)}` · {status}\n"
+                    f"Reaja 🎯 para marcar · remova a reação para liberar",
+        color=color,
+    )
+    embed.set_footer(text=f"ID: {pokemon.id} | Categoria: {pokemon.category}")
+    if pokemon.image_url:
+        embed.set_thumbnail(url=pokemon.image_url)
+    return embed
 
 
 class PokemonCog(commands.Cog):
@@ -60,38 +84,47 @@ class PokemonCog(commands.Cog):
 
         await interaction.response.send_message(embed=embed)
 
-    @app_commands.command(name="pokemon-anunciar", description="(Admin) Anunciar pokémon disponível para uso")
-    @app_commands.describe(pokemon_id="ID do pokémon", mensagem="Mensagem opcional")
-    async def pokemon_anunciar(self, interaction: discord.Interaction, pokemon_id: int, mensagem: str = ""):
+    @app_commands.command(name="pokemon-painel", description="(Admin) Postar/atualizar o painel de pokémons no canal")
+    async def pokemon_painel(self, interaction: discord.Interaction):
         async with AsyncSessionLocal() as db:
-            pokemon = await db.get(Pokemon, pokemon_id)
-            if not pokemon:
-                await interaction.response.send_message("Pokémon não encontrado.", ephemeral=True)
-                return
-
             user = await db.get(User, str(interaction.user.id))
             if not user or not user.is_admin:
-                await interaction.response.send_message("Apenas admins podem anunciar pokémons.", ephemeral=True)
+                await interaction.response.send_message("Apenas admins podem postar o painel.", ephemeral=True)
                 return
+            pokemons = (await db.execute(
+                select(Pokemon).order_by(Pokemon.category, Pokemon.name)
+            )).scalars().all()
 
-        from bot.config import DISCORD_POKEMON_CHANNEL_ID
         channel = interaction.guild.get_channel(DISCORD_POKEMON_CHANNEL_ID)
         if not channel:
-            await interaction.response.send_message("Canal de pokémons não encontrado.", ephemeral=True)
+            await interaction.response.send_message("Canal de pokémons não configurado.", ephemeral=True)
+            return
+        if not pokemons:
+            await interaction.response.send_message(
+                "Nenhum pokémon cadastrado. Adicione pela aba **Pokémons** no site.", ephemeral=True
+            )
             return
 
-        embed = discord.Embed(
-            title=f"🎯 {pokemon.name} disponível!",
-            description=mensagem or f"**{pokemon.name}** [{CATEGORY_LABEL[pokemon.category]}] está livre para uso.\nReaja com 🎯 para marcar que vai usar.",
-            color=discord.Color.yellow(),
-        )
-        embed.set_footer(text=f"ID: {pokemon.id} | Categoria: {pokemon.category}")
-        if pokemon.image_url:
-            embed.set_thumbnail(url=pokemon.image_url)
+        await interaction.response.send_message(f"Postando o painel em {channel.mention}...", ephemeral=True)
 
-        msg = await channel.send(embed=embed)
-        await msg.add_reaction("🎯")
-        await interaction.response.send_message(f"Anúncio postado em {channel.mention}.", ephemeral=True)
+        # Remove o painel anterior do bot neste canal
+        try:
+            await channel.purge(limit=300, check=lambda m: m.author == self.bot.user)
+        except discord.Forbidden:
+            pass
+
+        await channel.send(
+            "🎯 **Painel de Pokémons da VKG House**\n"
+            "Reaja com 🎯 em um pokémon para marcar que vai usá-lo. Remova a reação para liberar."
+        )
+        for cat in ["A", "B", "C"]:
+            group = [p for p in pokemons if p.category == cat]
+            if not group:
+                continue
+            await channel.send(f"__**{CATEGORY_LABEL[cat]}**__")
+            for p in group:
+                msg = await channel.send(embed=build_pokemon_embed(p, interaction.guild))
+                await msg.add_reaction("🎯")
 
 
 async def setup(bot: commands.Bot):

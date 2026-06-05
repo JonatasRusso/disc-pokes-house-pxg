@@ -13,13 +13,19 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy import select
 
 from api.database import AsyncSessionLocal
-from api.models import Outbox, Schedule, ScheduleConfirmation, PartyMember, User
-from bot.config import DISCORD_NOTIFY_CHANNEL_ID, SITE_URL
+from api.models import Outbox, Pokemon, Schedule, ScheduleConfirmation, PartyMember, User
+from bot.config import DISCORD_NOTIFY_CHANNEL_ID, DISCORD_POKEMON_CHANNEL_ID, SITE_URL
 
 log = logging.getLogger(__name__)
 
 # schedule_id -> message_id da mensagem de notificação no Discord
 _active_pings: dict[int, int] = {}
+
+# schedule_id -> start_time iso já lembrado (evita repetir o lembrete de pokémon na mesma ocorrência)
+_poke_reminded: dict[int, str] = {}
+
+ROLE_TO_CAT  = {"TANK": "A", "DPS": "B", "SUP": "C"}
+CAT_LABEL    = {"A": "Tank", "B": "DPS", "C": "Sup"}
 
 
 def start_scheduler(bot: discord.Client):
@@ -144,6 +150,9 @@ async def _check_schedules(bot: discord.Client):
             )
             members = members_result.scalars().all()
 
+            # Lembrete de pokémons da PT (uma vez por ocorrência)
+            await _pokemon_pt_reminder(bot, db, schedule, members)
+
             for member in members:
                 conf_result = await db.execute(
                     select(ScheduleConfirmation).where(
@@ -169,6 +178,45 @@ async def _check_schedules(bot: discord.Client):
                 await _send_ping(bot, channel, schedule, member.user_id, member.role)
 
         await db.commit()
+
+
+async def _pokemon_pt_reminder(bot: discord.Client, db, schedule: Schedule, members: list):
+    """Quando a PT entra na janela de 30 min, lembra os membros de marcar os pokémons (1x por ocorrência)."""
+    iso = schedule.start_time.isoformat()
+    if _poke_reminded.get(schedule.id) == iso:
+        return
+
+    channel = bot.get_channel(DISCORD_POKEMON_CHANNEL_ID)
+    if not channel:
+        return
+
+    free = (await db.execute(select(Pokemon).where(Pokemon.assigned_to.is_(None)))).scalars().all()
+    roles_present = {m.role for m in members}
+    cats = {ROLE_TO_CAT[r] for r in roles_present if r in ROLE_TO_CAT}
+
+    lines = []
+    for cat in ["A", "B", "C"]:
+        if cat not in cats:
+            continue
+        names = [p.name for p in free if p.category == cat]
+        lines.append(f"**{CAT_LABEL[cat]}**: " + (", ".join(names) if names else "— nenhum livre"))
+
+    mentions = " ".join(f"<@{m.user_id}>" for m in members)
+    embed = discord.Embed(
+        title="🎯 Marquem os pokémons da PT!",
+        description=(
+            f"A PT **{schedule.difficulty}** começa em breve.\n"
+            f"Marquem seus pokémons no painel reagindo com 🎯.\n\n"
+            f"Livres por função:\n" + ("\n".join(lines) if lines else "—")
+        ),
+        color=discord.Color.teal(),
+    )
+    await channel.send(
+        content=mentions,
+        embed=embed,
+        allowed_mentions=discord.AllowedMentions(users=True),
+    )
+    _poke_reminded[schedule.id] = iso
 
 
 async def _send_ping(
