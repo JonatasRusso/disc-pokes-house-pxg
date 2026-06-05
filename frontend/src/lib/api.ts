@@ -31,6 +31,7 @@ export const getMembers = () => req<Member[]>("/members");
 // --- Schedules ---
 export const getSchedules = () => req<Schedule[]>("/schedules");
 export const getFreeSlots = () => req<Slot[]>("/schedules/free-slots");
+export const getCalendar  = () => req<CalendarParty[]>("/schedules/calendar");
 export const createSchedule = (body: ScheduleIn) =>
   req<Schedule>("/schedules", { method: "POST", body: JSON.stringify(body) });
 export const reschedule = (id: number, new_start: string) =>
@@ -87,6 +88,22 @@ export interface Schedule {
   hour: number;
   organizer_id: string | null;
   status: "pending" | "confirmed" | "rescheduled" | "missed" | "cancelled";
+  members: ScheduleMember[];
+}
+
+export interface ScheduleMember {
+  discord_id: string;
+  nick: string;
+  role: "DPS" | "SUP" | "TANK";
+  character: string | null;
+}
+
+export interface CalendarParty {
+  schedule_id: number;
+  weekday: number;
+  hour: number;
+  difficulty: "HARD" | "NW";
+  members: ScheduleMember[];
 }
 
 // 0=Seg..6=Dom (Python weekday) para exibição

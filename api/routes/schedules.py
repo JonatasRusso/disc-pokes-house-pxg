@@ -75,6 +75,30 @@ class RescheduleIn(BaseModel):
     new_start: datetime
 
 
+async def _party_members_map(db: AsyncSession, party_ids: list[int]) -> dict[int, list[dict]]:
+    """party_id -> lista de membros [{discord_id, nick, role, character}]."""
+    if not party_ids:
+        return {}
+    rows = await db.execute(
+        select(PartyMember, User, Character)
+        .join(User, User.discord_id == PartyMember.user_id)
+        .outerjoin(Character, Character.id == PartyMember.character_id)
+        .where(PartyMember.party_id.in_(party_ids))
+    )
+    out: dict[int, list[dict]] = {}
+    role_order = {"TANK": 0, "SUP": 1, "DPS": 2}
+    for pm, u, ch in rows.all():
+        out.setdefault(pm.party_id, []).append({
+            "discord_id": u.discord_id,
+            "nick":       u.nick or u.username,
+            "role":       pm.role,
+            "character":  ch.name if ch else None,
+        })
+    for members in out.values():
+        members.sort(key=lambda m: role_order.get(m["role"], 9))
+    return out
+
+
 @router.get("")
 async def list_schedules(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     # PTs onde o usuário é membro OU que ele organizou (admin sem se incluir)
@@ -90,7 +114,23 @@ async def list_schedules(user: User = Depends(get_current_user), db: AsyncSessio
         .order_by(Schedule.start_time)
     )
     schedules = result.scalars().unique().all()
-    return [_schedule_dict(s) for s in schedules]
+    mmap = await _party_members_map(db, [s.party_id for s in schedules])
+    return [{**_schedule_dict(s), "members": mmap.get(s.party_id, [])} for s in schedules]
+
+
+@router.get("/calendar")
+async def calendar(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Todas as PTs ativas com seus membros — visível para qualquer membro logado."""
+    result = await db.execute(select(Schedule).where(Schedule.status.in_(ACTIVE_STATUSES)))
+    schedules = result.scalars().all()
+    mmap = await _party_members_map(db, [s.party_id for s in schedules])
+    return [{
+        "schedule_id": s.id,
+        "weekday":     s.start_time.weekday(),
+        "hour":        s.start_time.hour,
+        "difficulty":  s.difficulty,
+        "members":     mmap.get(s.party_id, []),
+    } for s in schedules]
 
 
 @router.get("/free-slots")

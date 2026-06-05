@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useParams, useNavigate } from "react-router-dom";
-import { getFreeSlots, reschedule } from "../lib/api";
+import { getFreeSlots, getCalendar, reschedule } from "../lib/api";
 import { useState } from "react";
 import WeeklySlots from "../components/WeeklySlots";
 
@@ -10,7 +10,8 @@ export default function Remarcar() {
   const qc        = useQueryClient();
   const scheduleId = Number(id);
 
-  const { data: slots = [] } = useQuery({ queryKey: ["free-slots"], queryFn: getFreeSlots });
+  const { data: slots   = [] } = useQuery({ queryKey: ["free-slots"], queryFn: getFreeSlots });
+  const { data: parties = [] } = useQuery({ queryKey: ["calendar"],   queryFn: getCalendar });
   const [slot,  setSlot]  = useState("");
   const [error, setError] = useState("");
 
@@ -36,7 +37,7 @@ export default function Remarcar() {
         <label className="block text-sm text-gray-400">
           Novo horário {slot && <span className="text-brand">— {new Date(slot).toLocaleString("pt-BR")}</span>}
         </label>
-        <WeeklySlots slots={slots} selected={slot} onSelect={setSlot} />
+        <WeeklySlots slots={slots} selected={slot} onSelect={setSlot} parties={parties} />
 
         <button
           onClick={() => doReschedule.mutate()}
