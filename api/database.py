@@ -15,6 +15,7 @@ AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False)
 # Migrações leves idempotentes (sem Alembic). create_all não altera tabelas existentes.
 _MIGRATIONS = [
     "ALTER TABLE party_members ADD COLUMN IF NOT EXISTS character_id INTEGER",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS nick TEXT",
 ]
 
 

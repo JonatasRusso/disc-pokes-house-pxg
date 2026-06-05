@@ -37,11 +37,13 @@ async def _upsert_member(db, member: discord.Member):
         return
     db_user = await db.get(User, str(member.id))
     avatar_url = str(member.display_avatar.url)
+    nick = member.display_name  # apelido no servidor (ou nome global se não tiver)
     if db_user:
         db_user.username   = member.name
+        db_user.nick       = nick
         db_user.avatar_url = avatar_url
     else:
-        db.add(User(discord_id=str(member.id), username=member.name, avatar_url=avatar_url))
+        db.add(User(discord_id=str(member.id), username=member.name, nick=nick, avatar_url=avatar_url))
 
 
 async def sync_roster():

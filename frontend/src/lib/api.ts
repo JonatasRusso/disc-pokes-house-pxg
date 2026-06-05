@@ -89,6 +89,7 @@ export interface Schedule {
 export interface Slot {
   start: string;
   end: string;
+  free: boolean;
 }
 
 export interface ScheduleIn {

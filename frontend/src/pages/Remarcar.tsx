@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useParams, useNavigate } from "react-router-dom";
 import { getFreeSlots, reschedule } from "../lib/api";
 import { useState } from "react";
+import WeeklySlots from "../components/WeeklySlots";
 
 export default function Remarcar() {
   const { id }    = useParams<{ id: string }>();
@@ -23,7 +24,7 @@ export default function Remarcar() {
   });
 
   return (
-    <div className="max-w-md space-y-6">
+    <div className="max-w-4xl space-y-6">
       <h1 className="text-2xl font-bold">Remarcar Horário #{scheduleId}</h1>
       <p className="text-gray-400 text-sm">
         Escolha um novo horário. Os outros 3 membros da party serão notificados automaticamente.
@@ -32,21 +33,10 @@ export default function Remarcar() {
       {error && <p className="text-red-400 text-sm bg-red-900/30 px-3 py-2 rounded">{error}</p>}
 
       <div className="bg-gray-900 rounded-lg p-5 space-y-4">
-        <div>
-          <label className="block text-sm text-gray-400 mb-1">Novo horário disponível</label>
-          <select
-            className="w-full bg-gray-800 rounded px-3 py-2 text-sm"
-            value={slot}
-            onChange={(e) => setSlot(e.target.value)}
-          >
-            <option value="">Selecione...</option>
-            {slots.map((s) => (
-              <option key={s.start} value={s.start}>
-                {new Date(s.start).toLocaleString("pt-BR")} → {new Date(s.end).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
-              </option>
-            ))}
-          </select>
-        </div>
+        <label className="block text-sm text-gray-400">
+          Novo horário {slot && <span className="text-brand">— {new Date(slot).toLocaleString("pt-BR")}</span>}
+        </label>
+        <WeeklySlots slots={slots} selected={slot} onSelect={setSlot} />
 
         <button
           onClick={() => doReschedule.mutate()}
