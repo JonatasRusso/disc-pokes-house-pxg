@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Link } from "react-router-dom";
 import { getSchedules, cancelSchedule, WEEKDAY_LABEL } from "../lib/api";
 
 const STATUS_COLOR: Record<string, string> = {
@@ -47,12 +48,17 @@ export default function AdminPlanilha() {
                 <td className={`py-2 pr-4 font-medium ${STATUS_COLOR[s.status]}`}>{s.status}</td>
                 <td className="py-2">
                   {s.status !== "cancelled" && (
-                    <button
-                      onClick={() => cancel.mutate(s.id)}
-                      className="text-red-500 hover:text-red-400 text-xs hover:underline"
-                    >
-                      Cancelar
-                    </button>
+                    <div className="flex gap-3">
+                      <Link to={`/remarcar/${s.id}`} className="text-brand hover:underline text-xs">
+                        Remarcar
+                      </Link>
+                      <button
+                        onClick={() => cancel.mutate(s.id)}
+                        className="text-red-500 hover:text-red-400 text-xs hover:underline"
+                      >
+                        Cancelar
+                      </button>
+                    </div>
                   )}
                 </td>
               </tr>

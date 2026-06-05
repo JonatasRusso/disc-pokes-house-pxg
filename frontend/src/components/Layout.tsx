@@ -39,6 +39,11 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                   <img src={user.avatar_url} className="w-8 h-8 rounded-full" alt="" />
                 )}
                 <span className="text-sm text-gray-400">{user?.username}</span>
+                {user?.is_admin && (
+                  <span className="text-[10px] font-bold uppercase tracking-wide bg-brand text-white px-2 py-0.5 rounded-full">
+                    Admin
+                  </span>
+                )}
                 <button
                   onClick={logout}
                   className="text-sm text-gray-500 hover:text-white transition-colors"

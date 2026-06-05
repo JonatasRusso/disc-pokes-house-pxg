@@ -16,6 +16,7 @@ AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False)
 _MIGRATIONS = [
     "ALTER TABLE party_members ADD COLUMN IF NOT EXISTS character_id INTEGER",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS nick TEXT",
+    "ALTER TABLE schedules ALTER COLUMN character_id DROP NOT NULL",  # admin pode criar PT sem se incluir
 ]
 
 
