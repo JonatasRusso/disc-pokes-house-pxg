@@ -26,11 +26,11 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             <>
               <NavLink to="/dashboard" className={navClass}>Dashboard</NavLink>
               <NavLink to="/agendar" className={navClass}>Agendar</NavLink>
-              <NavLink to="/pokemon" className={navClass}>Pokédex</NavLink>
               <NavLink to="/perfil" className={navClass}>Perfil</NavLink>
               {user?.is_admin && (
                 <>
                   <NavLink to="/admin/planilha" className={navClass}>Admin</NavLink>
+                  <NavLink to="/admin/pokemon" className={navClass}>Pokémons</NavLink>
                   <NavLink to="/admin/logs" className={navClass}>Logs</NavLink>
                 </>
               )}

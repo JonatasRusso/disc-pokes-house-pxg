@@ -8,17 +8,16 @@ export default function Perfil() {
   const qc = useQueryClient();
   const { data: chars = [], isLoading } = useQuery({ queryKey: ["characters"], queryFn: getCharacters });
 
-  const [newName, setNewName]   = useState("");
-  const [newCls,  setNewCls]   = useState("");
-  const [editing, setEditing]  = useState<Character | null>(null);
+  const [newName, setNewName] = useState("");
+  const [editing, setEditing] = useState<Character | null>(null);
 
   const create = useMutation({
-    mutationFn: () => createCharacter({ name: newName, cls: newCls || undefined }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["characters"] }); setNewName(""); setNewCls(""); },
+    mutationFn: () => createCharacter({ name: newName }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["characters"] }); setNewName(""); },
   });
 
   const update = useMutation({
-    mutationFn: (c: Character) => updateCharacter(c.id, { name: c.name, cls: c.class ?? undefined }),
+    mutationFn: (c: Character) => updateCharacter(c.id, { name: c.name }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["characters"] }); setEditing(null); },
   });
 
@@ -59,19 +58,12 @@ export default function Perfil() {
                       value={editing.name}
                       onChange={(e) => setEditing({ ...editing, name: e.target.value })}
                     />
-                    <input
-                      className="bg-gray-800 rounded px-2 py-1 text-sm w-28"
-                      value={editing.class ?? ""}
-                      placeholder="Classe"
-                      onChange={(e) => setEditing({ ...editing, class: e.target.value })}
-                    />
                     <button onClick={() => update.mutate(editing)} className="text-green-400 text-sm hover:underline">Salvar</button>
                     <button onClick={() => setEditing(null)} className="text-gray-500 text-sm hover:underline">Cancelar</button>
                   </>
                 ) : (
                   <>
                     <span className="flex-1 font-medium">{c.name}</span>
-                    {c.class && <span className="text-gray-500 text-sm">{c.class}</span>}
                     <button onClick={() => setEditing(c)} className="text-brand text-sm hover:underline">Editar</button>
                     <button onClick={() => remove.mutate(c.id)} className="text-red-500 text-sm hover:underline">Excluir</button>
                   </>
@@ -90,16 +82,11 @@ export default function Perfil() {
               placeholder="Nome do personagem"
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
-            />
-            <input
-              className="bg-gray-800 rounded px-3 py-2 text-sm w-32"
-              placeholder="Classe"
-              value={newCls}
-              onChange={(e) => setNewCls(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && newName.trim()) create.mutate(); }}
             />
             <button
               onClick={() => create.mutate()}
-              disabled={!newName.trim()}
+              disabled={!newName.trim() || create.isPending}
               className="bg-brand hover:bg-brand-dark disabled:opacity-40 text-white px-4 py-2 rounded text-sm font-medium"
             >
               Adicionar

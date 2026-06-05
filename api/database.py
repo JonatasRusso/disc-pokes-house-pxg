@@ -1,6 +1,10 @@
 import os
+import logging
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from api.models import Base
+
+log = logging.getLogger(__name__)
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./discbot.db")
 
@@ -8,9 +12,20 @@ engine = create_async_engine(DATABASE_URL, echo=False)
 AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False)
 
 
+# Migrações leves idempotentes (sem Alembic). create_all não altera tabelas existentes.
+_MIGRATIONS = [
+    "ALTER TABLE party_members ADD COLUMN IF NOT EXISTS character_id INTEGER",
+]
+
+
 async def init_db():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        for stmt in _MIGRATIONS:
+            try:
+                await conn.execute(text(stmt))
+            except Exception as e:  # SQLite antigo não suporta IF NOT EXISTS; ignora se já existe
+                log.info(f"Migração ignorada ({stmt}): {e}")
 
 
 async def get_db():
