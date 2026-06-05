@@ -1,6 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { getSchedules, cancelSchedule, Schedule } from "../lib/api";
-import { useState } from "react";
+import { getSchedules, cancelSchedule, WEEKDAY_LABEL } from "../lib/api";
 
 const STATUS_COLOR: Record<string, string> = {
   pending:     "text-yellow-400",
@@ -32,8 +31,8 @@ export default function AdminPlanilha() {
             <tr className="text-left text-gray-500 border-b border-gray-800">
               <th className="pb-2 pr-4">ID</th>
               <th className="pb-2 pr-4">Dificuldade</th>
-              <th className="pb-2 pr-4">Início</th>
-              <th className="pb-2 pr-4">Fim</th>
+              <th className="pb-2 pr-4">Recorrência</th>
+              <th className="pb-2 pr-4">Próxima</th>
               <th className="pb-2 pr-4">Status</th>
               <th className="pb-2">Ações</th>
             </tr>
@@ -43,8 +42,8 @@ export default function AdminPlanilha() {
               <tr key={s.id} className="hover:bg-gray-900/50">
                 <td className="py-2 pr-4 text-gray-400">#{s.id}</td>
                 <td className="py-2 pr-4 font-medium">{s.difficulty}</td>
-                <td className="py-2 pr-4 text-gray-300">{new Date(s.start_time).toLocaleString("pt-BR")}</td>
-                <td className="py-2 pr-4 text-gray-300">{new Date(s.end_time).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</td>
+                <td className="py-2 pr-4 text-gray-300">🔁 Toda {WEEKDAY_LABEL[s.weekday]} {String(s.hour).padStart(2, "0")}:00</td>
+                <td className="py-2 pr-4 text-gray-400">{new Date(s.start_time).toLocaleDateString("pt-BR")}</td>
                 <td className={`py-2 pr-4 font-medium ${STATUS_COLOR[s.status]}`}>{s.status}</td>
                 <td className="py-2">
                   {s.status !== "cancelled" && (
