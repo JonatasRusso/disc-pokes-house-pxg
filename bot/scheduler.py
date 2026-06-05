@@ -88,7 +88,38 @@ async def _send_party_invite(channel: discord.TextChannel, item: Outbox):
     )
 
 
+async def _rollover_recurring():
+    """Recorrência semanal: parties que já terminaram avançam para a próxima semana."""
+    now = datetime.utcnow()
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(
+            select(Schedule).where(
+                Schedule.status.in_(["pending", "confirmed", "rescheduled"]),
+                Schedule.end_time < now,
+            )
+        )
+        rolled = 0
+        for s in result.scalars().all():
+            # Avança em blocos de 7 dias até a próxima ocorrência futura
+            while s.end_time < now:
+                s.start_time += timedelta(days=7)
+                s.end_time   += timedelta(days=7)
+            s.status = "pending"
+            confs = await db.execute(
+                select(ScheduleConfirmation).where(ScheduleConfirmation.schedule_id == s.id)
+            )
+            for conf in confs.scalars().all():
+                conf.confirmed = False
+                conf.last_ping = None
+            rolled += 1
+        if rolled:
+            await db.commit()
+            log.info(f"{rolled} party(ies) recorrente(s) avançada(s) para a próxima semana.")
+
+
 async def _check_schedules(bot: discord.Client):
+    await _rollover_recurring()
+
     now     = datetime.now(timezone.utc)
     soon    = now + timedelta(minutes=30)
 

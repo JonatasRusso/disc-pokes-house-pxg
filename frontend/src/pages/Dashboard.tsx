@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { getSchedules, getPokemon, getHistory } from "../lib/api";
+import { getSchedules, getPokemon, getHistory, WEEKDAY_LABEL } from "../lib/api";
 import { useAuth } from "../lib/useAuth";
 import { Link } from "react-router-dom";
 
@@ -43,9 +43,14 @@ export default function Dashboard() {
                   {s.status}
                 </span>
                 <div>
-                  <p className="font-medium">{s.difficulty}</p>
+                  <p className="font-medium">
+                    {s.difficulty} <span className="text-gray-500 text-xs font-normal">· toda semana</span>
+                  </p>
                   <p className="text-gray-400 text-sm">
-                    {new Date(s.start_time).toLocaleString("pt-BR")} → {new Date(s.end_time).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                    🔁 Toda <strong>{WEEKDAY_LABEL[s.weekday]}</strong> {String(s.hour).padStart(2, "0")}:00 → {String((s.hour + 3) % 24).padStart(2, "0")}:00
+                  </p>
+                  <p className="text-gray-600 text-xs">
+                    Próxima: {new Date(s.start_time).toLocaleDateString("pt-BR")}
                   </p>
                 </div>
                 <Link to={`/remarcar/${s.id}`} className="ml-auto text-sm text-gray-500 hover:text-orange-400 transition-colors">

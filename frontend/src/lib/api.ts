@@ -83,8 +83,13 @@ export interface Schedule {
   difficulty: "HARD" | "NW";
   start_time: string;
   end_time: string;
+  weekday: number;  // 0=Seg .. 6=Dom
+  hour: number;
   status: "pending" | "confirmed" | "rescheduled" | "missed" | "cancelled";
 }
+
+// 0=Seg..6=Dom (Python weekday) para exibição
+export const WEEKDAY_LABEL = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"];
 
 export interface Slot {
   start: string;

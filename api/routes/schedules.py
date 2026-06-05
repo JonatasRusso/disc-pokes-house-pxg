@@ -17,8 +17,29 @@ router = APIRouter(prefix="/schedules", tags=["schedules"])
 
 ROLES = {"DPS", "SUP", "TANK"}
 DIFFICULTIES = {"HARD", "NW"}
-ACTIVE_STATUSES = ["pending", "confirmed"]
+ACTIVE_STATUSES = ["pending", "confirmed", "rescheduled"]
 SITE_URL = os.getenv("SITE_URL", "http://localhost:5173")
+
+
+def next_occurrence(weekday: int, hour: int, after: datetime) -> datetime:
+    """Próxima data/hora (futuro) com o dia-da-semana e hora dados. Recorrência semanal."""
+    candidate = after.replace(hour=hour, minute=0, second=0, microsecond=0)
+    days_ahead = (weekday - candidate.weekday()) % 7
+    candidate += timedelta(days=days_ahead)
+    if candidate <= after:
+        candidate += timedelta(days=7)
+    return candidate
+
+
+async def _busy_weekday_hours(db: AsyncSession) -> list[tuple[int, int]]:
+    """(dia_da_semana, hora) de cada PT ativa — base da grade semanal recorrente."""
+    result = await db.execute(select(Schedule).where(Schedule.status.in_(ACTIVE_STATUSES)))
+    return [(s.start_time.weekday(), s.start_time.hour) for s in result.scalars().all()]
+
+
+def _conflicts(weekday: int, hour: int, busy: list[tuple[int, int]]) -> bool:
+    """Há conflito se outro bloco de 3h no mesmo dia-da-semana sobrepõe esta hora."""
+    return any(bwd == weekday and abs(hour - bh) < 3 for bwd, bh in busy)
 
 
 class PartyMemberIn(BaseModel):
@@ -67,27 +88,19 @@ async def list_schedules(user: User = Depends(get_current_user), db: AsyncSessio
 
 @router.get("/free-slots")
 async def free_slots(db: AsyncSession = Depends(get_db)):
-    """Grade semanal: para cada hora (00:00..23:00) dos próximos 7 dias,
-    retorna o bloco de 3h com flag `free` (livre = futuro e sem conflito)."""
-    now        = datetime.utcnow()
-    day_start  = now.replace(hour=0, minute=0, second=0, microsecond=0)  # alinhado à meia-noite
-    end        = day_start + timedelta(days=7)
+    """Grade semanal recorrente: para cada hora (00:00..23:00) dos 7 dias da semana,
+    retorna o bloco de 3h com flag `free`. Sem trava de horário — escolher um dia já
+    passado nesta semana agenda para a próxima semana. Livre = sem conflito recorrente."""
+    day_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    end       = day_start + timedelta(days=7)
 
-    result = await db.execute(
-        select(Schedule).where(
-            Schedule.status.in_(["pending", "confirmed"]),
-            Schedule.end_time   >= day_start,
-            Schedule.start_time <= end,
-        )
-    )
-    busy_ranges = [(s.start_time, s.end_time) for s in result.scalars().all()]
+    busy = await _busy_weekday_hours(db)
 
     slots = []
     cursor = day_start
     while cursor < end:
         slot_end = cursor + timedelta(hours=3)
-        overlap  = any(s < slot_end and e > cursor for s, e in busy_ranges)
-        free     = (cursor > now) and not overlap
+        free     = not _conflicts(cursor.weekday(), cursor.hour, busy)
         slots.append({"start": cursor.isoformat(), "end": slot_end.isoformat(), "free": free})
         cursor += timedelta(hours=1)
 
@@ -104,6 +117,14 @@ async def create_schedule(body: ScheduleIn, user: User = Depends(get_current_use
     char = await db.get(Character, body.character_id)
     if not char or char.user_id != user.discord_id:
         raise HTTPException(404, "Personagem não encontrado")
+
+    # Recorrência semanal: calcula a próxima ocorrência do dia-da-semana/hora escolhidos
+    start_time = next_occurrence(body.start_time.weekday(), body.start_time.hour, datetime.utcnow())
+
+    # Conflito de horário (mesmo dia-da-semana, blocos de 3h sobrepostos)
+    busy = await _busy_weekday_hours(db)
+    if _conflicts(start_time.weekday(), start_time.hour, busy):
+        raise HTTPException(400, "Já existe uma PT nesse horário semanal.")
 
     # Regra: 1 PT ativa por personagem
     occupied = await _occupied_character_ids(db)
@@ -123,7 +144,7 @@ async def create_schedule(body: ScheduleIn, user: User = Depends(get_current_use
             if m.character_id in occupied:
                 raise HTTPException(400, f"Personagem '{mc.name}' já está em uma PT ativa.")
 
-    end_time = body.start_time + timedelta(hours=3)
+    end_time = start_time + timedelta(hours=3)
 
     # Cria party
     party = Party()
@@ -151,7 +172,7 @@ async def create_schedule(body: ScheduleIn, user: User = Depends(get_current_use
         party_id=party.id,
         character_id=body.character_id,
         difficulty=body.difficulty,
-        start_time=body.start_time,
+        start_time=start_time,
         end_time=end_time,
     )
     db.add(schedule)
@@ -166,7 +187,7 @@ async def create_schedule(body: ScheduleIn, user: User = Depends(get_current_use
         payload = {
             "inviter":         user.username,
             "schedule_id":     schedule.id,
-            "start_time":      body.start_time.isoformat(),
+            "start_time":      start_time.isoformat(),
             "difficulty":      body.difficulty,
             "role":            m.role,
             "needs_character": m.character_id is None,
@@ -179,7 +200,7 @@ async def create_schedule(body: ScheduleIn, user: User = Depends(get_current_use
         entity_type="schedule",
         entity_id=schedule.id,
         action="created",
-        detail=f'{{"difficulty":"{body.difficulty}","start":"{body.start_time.isoformat()}"}}',
+        detail=f'{{"difficulty":"{body.difficulty}","start":"{start_time.isoformat()}"}}',
     ))
     await db.commit()
     await db.refresh(schedule)
@@ -202,8 +223,9 @@ async def reschedule(schedule_id: int, body: RescheduleIn, user: User = Depends(
     if not member.scalar_one_or_none():
         raise HTTPException(403, "Você não é membro desta party")
 
-    schedule.start_time = body.new_start
-    schedule.end_time   = body.new_start + timedelta(hours=3)
+    new_start = next_occurrence(body.new_start.weekday(), body.new_start.hour, datetime.utcnow())
+    schedule.start_time = new_start
+    schedule.end_time   = new_start + timedelta(hours=3)
     schedule.status     = "rescheduled"
 
     # Reseta confirmações
@@ -219,7 +241,7 @@ async def reschedule(schedule_id: int, body: RescheduleIn, user: User = Depends(
         entity_type="schedule",
         entity_id=schedule_id,
         action="rescheduled",
-        detail=f'{{"new_start":"{body.new_start.isoformat()}"}}',
+        detail=f'{{"new_start":"{new_start.isoformat()}"}}',
     ))
     await db.commit()
     return _schedule_dict(schedule)
@@ -280,5 +302,7 @@ def _schedule_dict(s: Schedule) -> dict:
         "difficulty": s.difficulty,
         "start_time": s.start_time.isoformat(),
         "end_time":   s.end_time.isoformat(),
+        "weekday":    s.start_time.weekday(),  # 0=Seg .. 6=Dom
+        "hour":       s.start_time.hour,
         "status":     s.status,
     }
