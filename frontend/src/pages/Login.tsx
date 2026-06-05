@@ -10,7 +10,7 @@ export default function Login() {
   return (
     <div className="flex flex-col items-center justify-center min-h-[70vh] gap-6">
       <div className="text-center">
-        <h1 className="text-4xl font-bold mb-2">🪓 VKG House</h1>
+        <h1 className="text-4xl font-bold mb-2">VKG House</h1>
         <p className="text-gray-400">Gerencie horários de party e pokémons do seu servidor</p>
       </div>
       <a

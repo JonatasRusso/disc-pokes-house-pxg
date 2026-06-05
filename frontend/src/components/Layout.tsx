@@ -20,7 +20,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       <nav className="bg-gray-900 border-b border-gray-800">
         <div className="max-w-7xl mx-auto px-4 flex items-center gap-4 h-14">
           <Link to="/" className="text-brand font-bold text-lg mr-4">
-            🪓 VKG House
+            VKG House
           </Link>
           {isLoggedIn && (
             <>
