@@ -6,7 +6,7 @@ from api.database import AsyncSessionLocal
 from api.models import Pokemon, User
 
 
-CATEGORY_LABEL = {"A": "Categoria A (14)", "B": "Categoria B (8)", "C": "Categoria C (6)"}
+CATEGORY_LABEL = {"A": "Tank", "B": "DPS", "C": "Sup"}
 
 
 class PokemonCog(commands.Cog):

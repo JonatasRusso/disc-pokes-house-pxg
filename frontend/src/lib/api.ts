@@ -136,9 +136,11 @@ export interface Pokemon {
 export interface HistoryEntry {
   id: number;
   actor_id: string | null;
+  actor_name: string;
   entity_type: string;
   entity_id: number | null;
   action: string;
   detail: string | null;
+  summary: string;
   happened_at: string;
 }

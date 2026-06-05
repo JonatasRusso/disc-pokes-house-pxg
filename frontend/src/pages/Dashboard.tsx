@@ -17,6 +17,8 @@ const ROLE_COLOR: Record<string, string> = {
   DPS:  "text-red-400",
 };
 
+const POKE_CATEGORY: Record<string, string> = { A: "Tank", B: "DPS", C: "Sup" };
+
 export default function Dashboard() {
   const { user } = useAuth();
   const { data: schedules = [] } = useQuery({ queryKey: ["schedules"], queryFn: getSchedules });
@@ -104,7 +106,7 @@ export default function Dashboard() {
           <div className="flex flex-wrap gap-2">
             {myPokemon.map((p) => (
               <span key={p.id} className="bg-gray-800 px-3 py-1 rounded-full text-sm">
-                {p.name} <span className="text-gray-500 text-xs">[{p.category}]</span>
+                {p.name} <span className="text-gray-500 text-xs">[{POKE_CATEGORY[p.category]}]</span>
               </span>
             ))}
           </div>
