@@ -1,0 +1,8 @@
+{
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "https://disc-pokes-house-pxg-production.up.railway.app/:path*"
+    }
+  ]
+}

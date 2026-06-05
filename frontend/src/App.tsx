@@ -2,6 +2,7 @@ import { Routes, Route, Navigate } from "react-router-dom";
 import { useAuth } from "./lib/useAuth";
 import Layout from "./components/Layout";
 import Login from "./pages/Login";
+import { Analytics } from "@vercel/analytics/next"
 import Dashboard from "./pages/Dashboard";
 import Agendar from "./pages/Agendar";
 import Remarcar from "./pages/Remarcar";
@@ -27,6 +28,7 @@ function RequireAdmin({ children }: { children: React.ReactNode }) {
 export default function App() {
   return (
     <Layout>
+      <Analytics/>
       <Routes>
         <Route path="/" element={<Login />} />
         <Route path="/dashboard" element={<RequireAuth><Dashboard /></RequireAuth>} />
