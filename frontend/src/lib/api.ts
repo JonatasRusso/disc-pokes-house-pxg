@@ -18,12 +18,15 @@ export const getMe = () => req<User>("/auth/me");
 
 // --- Characters ---
 export const getCharacters = () => req<Character[]>("/characters");
-export const createCharacter = (body: { name: string; cls?: string }) =>
+export const createCharacter = (body: { name: string }) =>
   req<Character>("/characters", { method: "POST", body: JSON.stringify(body) });
-export const updateCharacter = (id: number, body: { name?: string; cls?: string }) =>
+export const updateCharacter = (id: number, body: { name?: string }) =>
   req<Character>(`/characters/${id}`, { method: "PATCH", body: JSON.stringify(body) });
 export const deleteCharacter = (id: number) =>
   req<{ ok: boolean }>(`/characters/${id}`, { method: "DELETE" });
+
+// --- Members ---
+export const getMembers = () => req<Member[]>("/members");
 
 // --- Schedules ---
 export const getSchedules = () => req<Schedule[]>("/schedules");
@@ -38,6 +41,8 @@ export const cancelSchedule = (id: number) =>
 // --- Pokémon ---
 export const getPokemon = () => req<Pokemon[]>("/pokemon");
 export const getMyPokemon = () => req<Pokemon[]>("/pokemon/my");
+export const createPokemon = (body: { name: string; image_url?: string; category: string }) =>
+  req<Pokemon>("/pokemon", { method: "POST", body: JSON.stringify(body) });
 export const assignPokemon = (id: number) =>
   req<Pokemon>(`/pokemon/${id}/assign`, { method: "PATCH" });
 export const unassignPokemon = (id: number) =>
@@ -63,7 +68,13 @@ export interface User {
 export interface Character {
   id: number;
   name: string;
-  class: string | null;
+}
+
+export interface Member {
+  discord_id: string;
+  username: string;
+  avatar_url: string | null;
+  characters: Character[];
 }
 
 export interface Schedule {
@@ -85,7 +96,7 @@ export interface ScheduleIn {
   role: string;
   difficulty: string;
   start_time: string;
-  party_members: { discord_id: string; role: string }[];
+  party_members: { discord_id: string; role: string; character_id: number | null }[];
 }
 
 export interface Pokemon {

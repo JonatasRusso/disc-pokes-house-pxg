@@ -30,7 +30,6 @@ class Character(Base):
     id      = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(String, ForeignKey("users.discord_id", ondelete="CASCADE"), nullable=False)
     name    = Column(String, nullable=False)
-    cls     = Column("class", String)
 
     user      = relationship("User", back_populates="characters")
     schedules = relationship("Schedule", back_populates="character")
@@ -52,12 +51,14 @@ class PartyMember(Base):
         CheckConstraint("role IN ('DPS','SUP','TANK')", name="ck_party_role"),
     )
 
-    party_id = Column(Integer, ForeignKey("parties.id", ondelete="CASCADE"), primary_key=True)
-    user_id  = Column(String, ForeignKey("users.discord_id", ondelete="CASCADE"), primary_key=True)
-    role     = Column(String, nullable=False)
+    party_id     = Column(Integer, ForeignKey("parties.id", ondelete="CASCADE"), primary_key=True)
+    user_id      = Column(String, ForeignKey("users.discord_id", ondelete="CASCADE"), primary_key=True)
+    role         = Column(String, nullable=False)
+    character_id = Column(Integer, ForeignKey("characters.id", ondelete="SET NULL"))  # NULL = convidado sem personagem ainda
 
-    party = relationship("Party", back_populates="members")
-    user  = relationship("User", back_populates="memberships")
+    party     = relationship("Party", back_populates="members")
+    user      = relationship("User", back_populates="memberships")
+    character = relationship("Character")
 
 
 class Schedule(Base):
@@ -124,3 +125,15 @@ class History(Base):
     happened_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
     actor = relationship("User", back_populates="history")
+
+
+class Outbox(Base):
+    """Fila de mensagens da API para o bot enviar no Discord (processos separados)."""
+    __tablename__ = "outbox"
+
+    id             = Column(Integer, primary_key=True, autoincrement=True)
+    kind           = Column(String, nullable=False)   # ex: 'party_invite'
+    target_user_id = Column(String, nullable=False)   # discord_id do destinatário
+    payload        = Column(Text)                      # JSON com contexto
+    created_at     = Column(DateTime, nullable=False, default=datetime.utcnow)
+    sent_at        = Column(DateTime)                  # NULL = ainda não enviado

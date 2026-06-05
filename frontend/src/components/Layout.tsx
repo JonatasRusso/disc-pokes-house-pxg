@@ -20,17 +20,17 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       <nav className="bg-gray-900 border-b border-gray-800">
         <div className="max-w-7xl mx-auto px-4 flex items-center gap-4 h-14">
           <Link to="/" className="text-brand font-bold text-lg mr-4">
-            ⚔️ PartyBot
+            VKG House
           </Link>
           {isLoggedIn && (
             <>
               <NavLink to="/dashboard" className={navClass}>Dashboard</NavLink>
               <NavLink to="/agendar" className={navClass}>Agendar</NavLink>
-              <NavLink to="/pokemon" className={navClass}>Pokédex</NavLink>
               <NavLink to="/perfil" className={navClass}>Perfil</NavLink>
               {user?.is_admin && (
                 <>
                   <NavLink to="/admin/planilha" className={navClass}>Admin</NavLink>
+                  <NavLink to="/admin/pokemon" className={navClass}>Pokémons</NavLink>
                   <NavLink to="/admin/logs" className={navClass}>Logs</NavLink>
                 </>
               )}
@@ -52,7 +52,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       </nav>
       <main className="flex-1 max-w-7xl mx-auto w-full px-4 py-6">{children}</main>
       <footer className="border-t border-gray-800 py-2 px-4 text-center text-xs text-gray-600">
-        PartyBot v{__APP_VERSION__}
+        VKG House v{__APP_VERSION__}
       </footer>
     </div>
   );

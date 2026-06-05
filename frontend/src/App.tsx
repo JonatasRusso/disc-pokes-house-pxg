@@ -6,9 +6,9 @@ import { Analytics } from "@vercel/analytics/react"
 import Dashboard from "./pages/Dashboard";
 import Agendar from "./pages/Agendar";
 import Remarcar from "./pages/Remarcar";
-import Pokedex from "./pages/Pokedex";
 import Perfil from "./pages/Perfil";
 import AdminPlanilha from "./pages/AdminPlanilha";
+import AdminPokemon from "./pages/AdminPokemon";
 import AdminLogs from "./pages/AdminLogs";
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
@@ -34,9 +34,9 @@ export default function App() {
         <Route path="/dashboard" element={<RequireAuth><Dashboard /></RequireAuth>} />
         <Route path="/agendar" element={<RequireAuth><Agendar /></RequireAuth>} />
         <Route path="/remarcar/:id" element={<RequireAuth><Remarcar /></RequireAuth>} />
-        <Route path="/pokemon" element={<RequireAuth><Pokedex /></RequireAuth>} />
         <Route path="/perfil" element={<RequireAuth><Perfil /></RequireAuth>} />
         <Route path="/admin/planilha" element={<RequireAuth><RequireAdmin><AdminPlanilha /></RequireAdmin></RequireAuth>} />
+        <Route path="/admin/pokemon" element={<RequireAuth><RequireAdmin><AdminPokemon /></RequireAdmin></RequireAuth>} />
         <Route path="/admin/logs" element={<RequireAuth><RequireAdmin><AdminLogs /></RequireAdmin></RequireAuth>} />
       </Routes>
     </Layout>

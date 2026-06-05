@@ -61,7 +61,9 @@ export default function Dashboard() {
       <section>
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-lg font-semibold">Seus Pokémons em Uso</h2>
-          <Link to="/pokemon" className="text-sm text-brand hover:underline">Ver todos</Link>
+          {user?.is_admin && (
+            <Link to="/admin/pokemon" className="text-sm text-brand hover:underline">Gerenciar</Link>
+          )}
         </div>
         <div className="flex items-center gap-4 text-sm text-gray-400 mb-3">
           <span>🟢 {myPokemon.length} em uso por você</span>

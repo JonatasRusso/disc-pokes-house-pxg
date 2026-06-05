@@ -4,6 +4,7 @@ Scheduler de notificações de horários de party.
 - Pinga cada membro não confirmado a cada minuto até confirmação ou início da party.
 """
 import asyncio
+import json
 import logging
 from datetime import datetime, timedelta, timezone
 
@@ -12,7 +13,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy import select
 
 from api.database import AsyncSessionLocal
-from api.models import Schedule, ScheduleConfirmation, PartyMember, User
+from api.models import Outbox, Schedule, ScheduleConfirmation, PartyMember, User
 from bot.config import DISCORD_NOTIFY_CHANNEL_ID, SITE_URL
 
 log = logging.getLogger(__name__)
@@ -24,9 +25,67 @@ _active_pings: dict[int, int] = {}
 def start_scheduler(bot: discord.Client):
     scheduler = AsyncIOScheduler()
     scheduler.add_job(_check_schedules, "interval", minutes=1, args=[bot])
+    scheduler.add_job(_process_outbox, "interval", seconds=20, args=[bot])
     scheduler.start()
     log.info("Scheduler iniciado.")
     return scheduler
+
+
+async def _process_outbox(bot: discord.Client):
+    """Envia mensagens enfileiradas pela API (convites de PT, etc)."""
+    channel = bot.get_channel(DISCORD_NOTIFY_CHANNEL_ID)
+    if not channel:
+        return
+
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(
+            select(Outbox).where(Outbox.sent_at.is_(None)).order_by(Outbox.id).limit(20)
+        )
+        items = result.scalars().all()
+
+        for item in items:
+            try:
+                if item.kind == "party_invite":
+                    await _send_party_invite(channel, item)
+            except Exception as e:
+                log.warning(f"Falha ao enviar outbox #{item.id}: {e}")
+                continue
+            item.sent_at = datetime.utcnow()
+
+        await db.commit()
+
+
+async def _send_party_invite(channel: discord.TextChannel, item: Outbox):
+    data = json.loads(item.payload or "{}")
+    inviter   = data.get("inviter", "Alguém")
+    start_iso = data.get("start_time")
+    role      = data.get("role", "")
+    link      = data.get("link", SITE_URL)
+    needs_char = data.get("needs_character", False)
+
+    try:
+        when = datetime.fromisoformat(start_iso).strftime("%d/%m %H:%M") if start_iso else "em breve"
+    except (ValueError, TypeError):
+        when = "em breve"
+
+    desc = (
+        f"<@{item.target_user_id}>, **{inviter}** te convidou para uma PT!\n\n"
+        f"🕐 Horário: `{when}` | Função: `{role}`\n"
+        f"➡️ Acesse o site para confirmar: {link}"
+    )
+    if needs_char:
+        desc += "\n\n⚠️ Você ainda não tem um personagem cadastrado — crie um no site para entrar na PT."
+
+    embed = discord.Embed(
+        title="🎉 Convite de Party",
+        description=desc,
+        color=discord.Color.blurple(),
+    )
+    await channel.send(
+        content=f"<@{item.target_user_id}>",
+        embed=embed,
+        allowed_mentions=discord.AllowedMentions(users=True),
+    )
 
 
 async def _check_schedules(bot: discord.Client):

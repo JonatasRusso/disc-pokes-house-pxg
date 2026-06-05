@@ -6,9 +6,12 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+from sqlalchemy import select
+
 from bot.config import DISCORD_TOKEN, DISCORD_GUILD_ID
 from bot.scheduler import start_scheduler, handle_confirmation
-from api.database import init_db
+from api.database import init_db, AsyncSessionLocal
+from api.models import User
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 log = logging.getLogger(__name__)
@@ -28,6 +31,34 @@ intents.members         = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 
+async def _upsert_member(db, member: discord.Member):
+    """Insere/atualiza um membro na tabela users (sem mexer em is_admin)."""
+    if member.bot:
+        return
+    db_user = await db.get(User, str(member.id))
+    avatar_url = str(member.display_avatar.url)
+    if db_user:
+        db_user.username   = member.name
+        db_user.avatar_url = avatar_url
+    else:
+        db.add(User(discord_id=str(member.id), username=member.name, avatar_url=avatar_url))
+
+
+async def sync_roster():
+    """Sincroniza o roster da guild para a tabela users."""
+    guild = bot.get_guild(DISCORD_GUILD_ID)
+    if not guild:
+        log.warning("Guild não encontrada para sincronizar roster.")
+        return
+    count = 0
+    async with AsyncSessionLocal() as db:
+        async for member in guild.fetch_members(limit=None):
+            await _upsert_member(db, member)
+            count += 1
+        await db.commit()
+    log.info(f"Roster sincronizado: {count} membros.")
+
+
 @bot.event
 async def on_ready():
     log.info(f"Bot online como {bot.user} (ID: {bot.user.id})")
@@ -35,7 +66,15 @@ async def on_ready():
     bot.tree.copy_global_to(guild=guild)
     synced = await bot.tree.sync(guild=guild)
     log.info(f"{len(synced)} comandos slash sincronizados.")
+    await sync_roster()
     start_scheduler(bot)
+
+
+@bot.event
+async def on_member_join(member: discord.Member):
+    async with AsyncSessionLocal() as db:
+        await _upsert_member(db, member)
+        await db.commit()
 
 
 @bot.event
