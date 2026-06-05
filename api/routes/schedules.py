@@ -67,27 +67,28 @@ async def list_schedules(user: User = Depends(get_current_user), db: AsyncSessio
 
 @router.get("/free-slots")
 async def free_slots(db: AsyncSession = Depends(get_db)):
-    """Retorna blocos de 3h disponíveis nos próximos 7 dias."""
-    now   = datetime.utcnow().replace(minute=0, second=0, microsecond=0)
-    end   = now + timedelta(days=7)
+    """Grade semanal: para cada hora (00:00..23:00) dos próximos 7 dias,
+    retorna o bloco de 3h com flag `free` (livre = futuro e sem conflito)."""
+    now        = datetime.utcnow()
+    day_start  = now.replace(hour=0, minute=0, second=0, microsecond=0)  # alinhado à meia-noite
+    end        = day_start + timedelta(days=7)
 
     result = await db.execute(
         select(Schedule).where(
             Schedule.status.in_(["pending", "confirmed"]),
-            Schedule.start_time >= now,
+            Schedule.end_time   >= day_start,
             Schedule.start_time <= end,
         )
     )
-    busy = result.scalars().all()
-    busy_ranges = [(s.start_time, s.end_time) for s in busy]
+    busy_ranges = [(s.start_time, s.end_time) for s in result.scalars().all()]
 
     slots = []
-    cursor = now
+    cursor = day_start
     while cursor < end:
         slot_end = cursor + timedelta(hours=3)
         overlap  = any(s < slot_end and e > cursor for s, e in busy_ranges)
-        if not overlap:
-            slots.append({"start": cursor.isoformat(), "end": slot_end.isoformat()})
+        free     = (cursor > now) and not overlap
+        slots.append({"start": cursor.isoformat(), "end": slot_end.isoformat(), "free": free})
         cursor += timedelta(hours=1)
 
     return slots

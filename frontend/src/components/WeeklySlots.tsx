@@ -8,53 +8,115 @@ interface Props {
 
 const WEEKDAYS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
 
-export default function WeeklySlots({ slots, selected, onSelect }: Props) {
-  // Agrupa slots livres por dia (chave = data ISO yyyy-mm-dd)
-  const byDay = new Map<string, Slot[]>();
-  for (const s of slots) {
-    const d = new Date(s.start);
-    const key = d.toISOString().slice(0, 10);
-    if (!byDay.has(key)) byDay.set(key, []);
-    byDay.get(key)!.push(s);
-  }
+function dayKey(iso: string) {
+  return iso.slice(0, 10); // yyyy-mm-dd (string ISO local, sem timezone)
+}
 
-  const days = Array.from(byDay.keys()).sort();
+function hourOf(iso: string) {
+  return Number(iso.slice(11, 13)); // HH
+}
+
+export default function WeeklySlots({ slots, selected, onSelect }: Props) {
+  // Dias distintos em ordem cronológica
+  const days = Array.from(new Set(slots.map((s) => dayKey(s.start)))).sort();
+
+  // Index: dayKey -> hour -> slot
+  const grid = new Map<string, Map<number, Slot>>();
+  for (const s of slots) {
+    const dk = dayKey(s.start);
+    if (!grid.has(dk)) grid.set(dk, new Map());
+    grid.get(dk)!.set(hourOf(s.start), s);
+  }
 
   if (days.length === 0) {
-    return <p className="text-gray-500 text-sm">Nenhum horário livre nos próximos 7 dias.</p>;
+    return <p className="text-sm text-gray-500">Nenhum horário disponível.</p>;
   }
 
+  const hours = Array.from({ length: 24 }, (_, h) => h);
+
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-3">
-      {days.map((dayKey) => {
-        const date = new Date(dayKey + "T00:00:00");
-        const daySlots = byDay.get(dayKey)!;
+    <div className="space-y-2">
+    <div className="flex items-center gap-4 text-xs text-gray-400">
+      <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-emerald-600/40 inline-block" /> disponível</span>
+      <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-brand inline-block" /> selecionado</span>
+    </div>
+    <div className="rounded-lg border border-gray-800 bg-gray-900/50 overflow-hidden">
+      <div className="overflow-auto max-h-[26rem]">
+        <div
+          className="grid min-w-[640px]"
+          style={{ gridTemplateColumns: `4rem repeat(${days.length}, minmax(0, 1fr))` }}
+        >
+          {/* Cabeçalho: canto + dias da semana */}
+          <div className="sticky top-0 z-10 bg-gray-900 border-b border-gray-800 h-10" />
+          {days.map((dk) => {
+            const wd = new Date(dk + "T00:00:00").getDay();
+            return (
+              <div
+                key={dk}
+                className="sticky top-0 z-10 bg-gray-900 border-b border-l border-gray-800 h-10 flex items-center justify-center text-xs font-semibold text-gray-300"
+              >
+                {WEEKDAYS[wd]}
+              </div>
+            );
+          })}
+
+          {/* Linhas por hora */}
+          {hours.map((h) => (
+            <Row
+              key={h}
+              hour={h}
+              days={days}
+              grid={grid}
+              selected={selected}
+              onSelect={onSelect}
+            />
+          ))}
+        </div>
+      </div>
+    </div>
+    </div>
+  );
+}
+
+function Row({
+  hour, days, grid, selected, onSelect,
+}: {
+  hour: number;
+  days: string[];
+  grid: Map<string, Map<number, Slot>>;
+  selected: string;
+  onSelect: (iso: string) => void;
+}) {
+  const label = `${String(hour).padStart(2, "0")}:00`;
+  return (
+    <>
+      <div className="h-9 flex items-center justify-end pr-2 text-[11px] text-gray-500 border-b border-gray-800/60 tabular-nums">
+        {label}
+      </div>
+      {days.map((dk) => {
+        const slot = grid.get(dk)?.get(hour);
+        const isSel = slot?.start === selected;
+        const free = slot?.free;
         return (
-          <div key={dayKey} className="bg-gray-900 rounded-lg p-2">
-            <div className="text-center mb-2 sticky top-0">
-              <p className="text-xs text-gray-500">{WEEKDAYS[date.getDay()]}</p>
-              <p className="text-sm font-semibold">{date.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}</p>
-            </div>
-            <div className="flex flex-col gap-1 max-h-64 overflow-y-auto">
-              {daySlots.map((s) => {
-                const isSel = s.start === selected;
-                const hh = new Date(s.start).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
-                return (
-                  <button
-                    key={s.start}
-                    onClick={() => onSelect(s.start)}
-                    className={`text-xs py-1 rounded transition-colors ${
-                      isSel ? "bg-brand text-white font-semibold" : "bg-gray-800 text-gray-300 hover:bg-gray-700"
-                    }`}
-                  >
-                    {hh}
-                  </button>
-                );
-              })}
-            </div>
+          <div key={dk + hour} className="h-9 border-b border-l border-gray-800/60 p-0.5">
+            {slot && (
+              <button
+                disabled={!free}
+                title={free ? "Disponível" : "Indisponível"}
+                onClick={() => free && onSelect(slot.start)}
+                className={[
+                  "w-full h-full rounded transition-colors",
+                  isSel
+                    ? "bg-brand"
+                    : free
+                    ? "bg-emerald-600/30 hover:bg-emerald-500/50"
+                    : "bg-transparent cursor-not-allowed",
+                ].join(" ")}
+              />
+            )}
           </div>
         );
       })}
-    </div>
+    </>
   );
 }
