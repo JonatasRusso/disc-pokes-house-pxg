@@ -2,7 +2,7 @@ import { Routes, Route, Navigate } from "react-router-dom";
 import { useAuth } from "./lib/useAuth";
 import Layout from "./components/Layout";
 import Login from "./pages/Login";
-import { Analytics } from "@vercel/analytics/next"
+import { Analytics } from "@vercel/analytics/react"
 import Dashboard from "./pages/Dashboard";
 import Agendar from "./pages/Agendar";
 import Remarcar from "./pages/Remarcar";
