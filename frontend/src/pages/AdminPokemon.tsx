@@ -36,6 +36,11 @@ export default function AdminPokemon() {
     <div className="space-y-8">
       <h1 className="text-2xl font-bold">Admin — Pokémons</h1>
 
+      <p className="text-sm text-gray-400 bg-gray-800/50 rounded px-3 py-2">
+        💡 Depois de cadastrar os pokémons, use o comando <code className="text-brand">/pokemon-painel</code> no
+        Discord para o bot postar o painel no canal. Aí todos marcam/desmarcam reagindo com 🎯.
+      </p>
+
       {/* Form de adição */}
       <section className="bg-gray-900 rounded-lg p-5 space-y-4 max-w-lg">
         <h2 className="text-lg font-semibold">Adicionar pokémon</h2>
