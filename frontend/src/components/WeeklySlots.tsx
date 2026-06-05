@@ -16,9 +16,16 @@ function hourOf(iso: string) {
   return Number(iso.slice(11, 13)); // HH
 }
 
+// Índice começando na segunda-feira (Seg=0 .. Dom=6) a partir do getDay() (Dom=0..Sáb=6)
+function mondayIndex(dk: string) {
+  return (new Date(dk + "T00:00:00").getDay() + 6) % 7;
+}
+
 export default function WeeklySlots({ slots, selected, onSelect }: Props) {
-  // Dias distintos em ordem cronológica
-  const days = Array.from(new Set(slots.map((s) => dayKey(s.start)))).sort();
+  // Dias distintos ordenados começando na segunda-feira
+  const days = Array.from(new Set(slots.map((s) => dayKey(s.start)))).sort(
+    (a, b) => mondayIndex(a) - mondayIndex(b)
+  );
 
   // Index: dayKey -> hour -> slot
   const grid = new Map<string, Map<number, Slot>>();

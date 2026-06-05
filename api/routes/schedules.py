@@ -38,8 +38,9 @@ async def _busy_weekday_hours(db: AsyncSession) -> list[tuple[int, int]]:
 
 
 def _conflicts(weekday: int, hour: int, busy: list[tuple[int, int]]) -> bool:
-    """Há conflito se outro bloco de 3h no mesmo dia-da-semana sobrepõe esta hora."""
-    return any(bwd == weekday and abs(hour - bh) < 3 for bwd, bh in busy)
+    """Marcar uma PT trava o horário marcado + as 2 horas posteriores.
+    Logo, a hora `hour` está ocupada se cair em [bh, bh+2] de alguma PT existente."""
+    return any(bwd == weekday and 0 <= (hour - bh) <= 2 for bwd, bh in busy)
 
 
 class PartyMemberIn(BaseModel):
@@ -49,11 +50,12 @@ class PartyMemberIn(BaseModel):
 
 
 class ScheduleIn(BaseModel):
-    character_id: int
-    role: str
+    character_id: int | None = None     # personagem do criador (None se admin não se incluir)
+    role: str | None = None
     difficulty: str
-    start_time: datetime               # ISO-8601
+    start_time: datetime                # ISO-8601
     party_members: list[PartyMemberIn]  # demais membros da PT
+    include_self: bool = True           # False: admin organiza PT sem participar
 
 
 async def _occupied_character_ids(db: AsyncSession) -> set[int]:
@@ -111,24 +113,33 @@ async def free_slots(db: AsyncSession = Depends(get_db)):
 async def create_schedule(body: ScheduleIn, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     if body.difficulty not in DIFFICULTIES:
         raise HTTPException(400, f"Dificuldade inválida. Use: {DIFFICULTIES}")
-    if body.role not in ROLES:
-        raise HTTPException(400, f"Função inválida. Use: {ROLES}")
 
-    char = await db.get(Character, body.character_id)
-    if not char or char.user_id != user.discord_id:
-        raise HTTPException(404, "Personagem não encontrado")
+    include_self = body.include_self
+    if not include_self and not user.is_admin:
+        raise HTTPException(403, "Apenas admins podem criar uma PT sem participar.")
+
+    # Personagem do criador (só quando ele participa)
+    if include_self:
+        if not body.character_id or body.role not in ROLES:
+            raise HTTPException(400, "Selecione seu personagem e sua função.")
+        char = await db.get(Character, body.character_id)
+        if not char or char.user_id != user.discord_id:
+            raise HTTPException(404, "Personagem não encontrado")
+    else:
+        if not body.party_members:
+            raise HTTPException(400, "Informe ao menos um membro para a PT.")
 
     # Recorrência semanal: calcula a próxima ocorrência do dia-da-semana/hora escolhidos
     start_time = next_occurrence(body.start_time.weekday(), body.start_time.hour, datetime.utcnow())
 
-    # Conflito de horário (mesmo dia-da-semana, blocos de 3h sobrepostos)
+    # Conflito de horário (marcar trava o horário + 2 horas posteriores)
     busy = await _busy_weekday_hours(db)
     if _conflicts(start_time.weekday(), start_time.hour, busy):
         raise HTTPException(400, "Já existe uma PT nesse horário semanal.")
 
     # Regra: 1 PT ativa por personagem
     occupied = await _occupied_character_ids(db)
-    if body.character_id in occupied:
+    if include_self and body.character_id in occupied:
         raise HTTPException(400, f"Personagem '{char.name}' já está em uma PT ativa.")
 
     # Valida personagens dos membros convidados
@@ -151,13 +162,17 @@ async def create_schedule(body: ScheduleIn, user: User = Depends(get_current_use
     db.add(party)
     await db.flush()
 
-    # Membro principal (criador)
-    db.add(PartyMember(
-        party_id=party.id, user_id=user.discord_id, role=body.role, character_id=body.character_id,
-    ))
+    # Membro principal (criador) — só se ele participa
+    seen = set()
+    self_members = []
+    if include_self:
+        db.add(PartyMember(
+            party_id=party.id, user_id=user.discord_id, role=body.role, character_id=body.character_id,
+        ))
+        seen.add(user.discord_id)
+        self_members.append(user.discord_id)
 
-    # Demais membros (deduplicados, exceto o criador)
-    seen = {user.discord_id}
+    # Demais membros (deduplicados)
     invited = []
     for m in body.party_members:
         if m.discord_id in seen:
@@ -170,7 +185,7 @@ async def create_schedule(body: ScheduleIn, user: User = Depends(get_current_use
 
     schedule = Schedule(
         party_id=party.id,
-        character_id=body.character_id,
+        character_id=body.character_id if include_self else None,
         difficulty=body.difficulty,
         start_time=start_time,
         end_time=end_time,
@@ -179,7 +194,7 @@ async def create_schedule(body: ScheduleIn, user: User = Depends(get_current_use
     await db.flush()
 
     # Confirmações pendentes para todos os membros
-    for uid in [user.discord_id] + [m.discord_id for m in invited]:
+    for uid in self_members + [m.discord_id for m in invited]:
         db.add(ScheduleConfirmation(schedule_id=schedule.id, user_id=uid))
 
     # Enfileira convite no Discord para cada membro convidado
@@ -213,17 +228,22 @@ async def reschedule(schedule_id: int, body: RescheduleIn, user: User = Depends(
     if not schedule:
         raise HTTPException(404, "Horário não encontrado")
 
-    # Verifica se o usuário é membro da party
+    # Membro da party OU admin podem remarcar
     member = await db.execute(
         select(PartyMember).where(
             PartyMember.party_id == schedule.party_id,
             PartyMember.user_id == user.discord_id,
         )
     )
-    if not member.scalar_one_or_none():
+    if not member.scalar_one_or_none() and not user.is_admin:
         raise HTTPException(403, "Você não é membro desta party")
 
     new_start = next_occurrence(body.new_start.weekday(), body.new_start.hour, datetime.utcnow())
+    # Evita conflito com outras PTs (ignora a própria)
+    busy = [(wd, h) for (wd, h) in await _busy_weekday_hours(db)
+            if not (wd == schedule.start_time.weekday() and h == schedule.start_time.hour)]
+    if _conflicts(new_start.weekday(), new_start.hour, busy):
+        raise HTTPException(400, "Já existe uma PT nesse horário semanal.")
     schedule.start_time = new_start
     schedule.end_time   = new_start + timedelta(hours=3)
     schedule.status     = "rescheduled"

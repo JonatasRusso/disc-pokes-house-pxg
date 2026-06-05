@@ -18,24 +18,36 @@ export default function Agendar() {
   const { data: slots      = [] } = useQuery({ queryKey: ["free-slots"], queryFn: getFreeSlots });
   const { data: members    = [] } = useQuery({ queryKey: ["members"],    queryFn: getMembers });
 
+  const isAdmin = !!user?.is_admin;
+
   const [charId, setCharId] = useState<number | "">("");
   const [role,   setRole]   = useState("DPS");
   const [diff,   setDiff]   = useState("HARD");
   const [slot,   setSlot]   = useState("");
+  const [includeSelf, setIncludeSelf] = useState(true);
+  const emptyRow = (r: string): PartyMemberInput => ({ discord_id: "", role: r, character_id: null });
   const [party,  setParty]  = useState<PartyMemberInput[]>([
-    { discord_id: "", role: "DPS", character_id: null },
-    { discord_id: "", role: "SUP", character_id: null },
-    { discord_id: "", role: "TANK", character_id: null },
+    emptyRow("DPS"), emptyRow("SUP"), emptyRow("TANK"),
   ]);
   const [error, setError] = useState("");
 
+  function toggleIncludeSelf(next: boolean) {
+    setIncludeSelf(next);
+    // PT tem 4 lugares: se o criador participa -> 3 convidados; se não -> 4
+    setParty(next
+      ? [emptyRow("DPS"), emptyRow("SUP"), emptyRow("TANK")]
+      : [emptyRow("DPS"), emptyRow("DPS"), emptyRow("SUP"), emptyRow("TANK")]
+    );
+  }
+
   const create = useMutation({
     mutationFn: () => createSchedule({
-      character_id:  charId as number,
-      role,
+      character_id:  includeSelf ? (charId as number) : null,
+      role:          includeSelf ? role : null,
       difficulty:    diff,
       start_time:    slot,
       party_members: party.filter((m) => m.discord_id),
+      include_self:  includeSelf,
     }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["schedules"] });
@@ -47,6 +59,10 @@ export default function Agendar() {
 
   function validateAndSubmit() {
     setError("");
+    if (!includeSelf && !party.some((m) => m.discord_id)) {
+      setError("Selecione ao menos um membro para a PT.");
+      return;
+    }
     // Membros que selecionaram alguém mas têm personagem livre devem escolher um
     for (const m of party) {
       if (!m.discord_id) continue;
@@ -59,6 +75,8 @@ export default function Agendar() {
     create.mutate();
   }
 
+  const canSubmit = slot && !create.isPending && (includeSelf ? !!charId : true);
+
   return (
     <div className="max-w-4xl space-y-6">
       <h1 className="text-2xl font-bold">Agendar Party</h1>
@@ -66,7 +84,21 @@ export default function Agendar() {
       {error && <p className="text-red-400 text-sm bg-red-900/30 px-3 py-2 rounded">{error}</p>}
 
       <div className="bg-gray-900 rounded-lg p-5 space-y-5">
+        {/* Toggle admin: organizar sem participar */}
+        {isAdmin && (
+          <label className="flex items-center gap-2 text-sm bg-gray-800/60 rounded px-3 py-2 cursor-pointer w-fit">
+            <input
+              type="checkbox"
+              checked={!includeSelf}
+              onChange={(e) => toggleIncludeSelf(!e.target.checked)}
+              className="accent-brand"
+            />
+            <span>Organizar esta PT sem me incluir <span className="text-gray-500">(admin)</span></span>
+          </label>
+        )}
+
         {/* Personagem do criador */}
+        {includeSelf && (
         <div>
           <label className="block text-sm text-gray-400 mb-1">Seu Personagem</label>
           <select
@@ -85,9 +117,11 @@ export default function Agendar() {
             </p>
           )}
         </div>
+        )}
 
         {/* Função + Dificuldade */}
         <div className="flex flex-wrap gap-6">
+          {includeSelf && (
           <div>
             <label className="block text-sm text-gray-400 mb-1">Sua Função</label>
             <div className="flex gap-2">
@@ -102,6 +136,7 @@ export default function Agendar() {
               ))}
             </div>
           </div>
+          )}
           <div>
             <label className="block text-sm text-gray-400 mb-1">Dificuldade</label>
             <div className="flex gap-2">
@@ -128,7 +163,9 @@ export default function Agendar() {
 
         {/* Membros da party */}
         <div>
-          <label className="block text-sm text-gray-400 mb-2">Membros da party (opcional)</label>
+          <label className="block text-sm text-gray-400 mb-2">
+            Membros da party {includeSelf ? "(opcional)" : "(obrigatório)"}
+          </label>
           <MemberPicker
             members={members}
             excludeId={user?.discord_id ?? ""}
@@ -139,7 +176,7 @@ export default function Agendar() {
 
         <button
           onClick={validateAndSubmit}
-          disabled={!charId || !slot || create.isPending}
+          disabled={!canSubmit}
           className="w-full bg-brand hover:bg-brand-dark disabled:opacity-40 text-white font-semibold py-2.5 rounded transition-colors"
         >
           {create.isPending ? "Agendando..." : "Confirmar Agendamento"}

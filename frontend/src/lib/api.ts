@@ -98,11 +98,12 @@ export interface Slot {
 }
 
 export interface ScheduleIn {
-  character_id: number;
-  role: string;
+  character_id: number | null;
+  role: string | null;
   difficulty: string;
   start_time: string;
   party_members: { discord_id: string; role: string; character_id: number | null }[];
+  include_self: boolean;
 }
 
 export interface Pokemon {

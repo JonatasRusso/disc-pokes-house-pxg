@@ -32,7 +32,7 @@ CREATE TABLE IF NOT EXISTS party_members (
 CREATE TABLE IF NOT EXISTS schedules (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     party_id     INTEGER NOT NULL REFERENCES parties(id) ON DELETE CASCADE,
-    character_id INTEGER NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+    character_id INTEGER REFERENCES characters(id) ON DELETE SET NULL,  -- NULL = PT organizada por admin sem se incluir
     difficulty   TEXT NOT NULL CHECK(difficulty IN ('HARD','NW')),
     start_time   TEXT NOT NULL,   -- ISO-8601
     end_time     TEXT NOT NULL,   -- start_time + 3h

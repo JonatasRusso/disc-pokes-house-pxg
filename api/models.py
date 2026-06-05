@@ -71,7 +71,7 @@ class Schedule(Base):
 
     id           = Column(Integer, primary_key=True, autoincrement=True)
     party_id     = Column(Integer, ForeignKey("parties.id", ondelete="CASCADE"), nullable=False)
-    character_id = Column(Integer, ForeignKey("characters.id", ondelete="CASCADE"), nullable=False)
+    character_id = Column(Integer, ForeignKey("characters.id", ondelete="SET NULL"))  # NULL = PT organizada por admin sem se incluir
     difficulty   = Column(String, nullable=False)
     start_time   = Column(DateTime, nullable=False)
     end_time     = Column(DateTime, nullable=False)
