@@ -50,7 +50,7 @@ async def list_members(user: User = Depends(get_current_user), db: AsyncSession 
             continue
         members.append({
             "discord_id": u.discord_id,
-            "username":   u.username,
+            "username":   u.nick or u.username,  # prioriza apelido no servidor
             "avatar_url": u.avatar_url,
             "characters": by_user.get(u.discord_id, []),
         })

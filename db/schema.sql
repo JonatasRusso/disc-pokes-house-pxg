@@ -1,7 +1,8 @@
 -- Usuários (populados via Discord OAuth)
 CREATE TABLE IF NOT EXISTS users (
     discord_id  TEXT PRIMARY KEY,
-    username    TEXT NOT NULL,
+    username    TEXT NOT NULL,   -- username global do Discord
+    nick        TEXT,            -- apelido no servidor (sincronizado pelo bot)
     avatar_url  TEXT,
     is_admin    BOOLEAN NOT NULL DEFAULT FALSE
 );

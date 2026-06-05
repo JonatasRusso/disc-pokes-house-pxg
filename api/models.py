@@ -13,7 +13,8 @@ class User(Base):
     __tablename__ = "users"
 
     discord_id = Column(String, primary_key=True)
-    username   = Column(String, nullable=False)
+    username   = Column(String, nullable=False)   # username global do Discord
+    nick       = Column(String)                    # apelido no servidor (sincronizado pelo bot)
     avatar_url = Column(String)
     is_admin   = Column(Boolean, nullable=False, default=False)
 

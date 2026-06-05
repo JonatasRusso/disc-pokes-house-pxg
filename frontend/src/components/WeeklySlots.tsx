@@ -41,7 +41,7 @@ export default function WeeklySlots({ slots, selected, onSelect }: Props) {
       <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-brand inline-block" /> selecionado</span>
     </div>
     <div className="rounded-lg border border-gray-800 bg-gray-900/50 overflow-hidden">
-      <div className="overflow-auto max-h-[26rem]">
+      <div className="overflow-auto max-h-[26rem] md:max-h-none md:overflow-visible">
         <div
           className="grid min-w-[640px]"
           style={{ gridTemplateColumns: `4rem repeat(${days.length}, minmax(0, 1fr))` }}
