@@ -51,6 +51,9 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         </div>
       </nav>
       <main className="flex-1 max-w-7xl mx-auto w-full px-4 py-6">{children}</main>
+      <footer className="border-t border-gray-800 py-2 px-4 text-center text-xs text-gray-600">
+        PartyBot v{__APP_VERSION__}
+      </footer>
     </div>
   );
 }
