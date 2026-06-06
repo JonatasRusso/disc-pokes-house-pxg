@@ -32,17 +32,20 @@ def _status(pokemon: Pokemon, guild: discord.Guild | None) -> tuple[str, discord
 
 
 def build_pokemon_embed(pokemon: Pokemon, guild: discord.Guild | None) -> discord.Embed:
-    """Opção 2: imagem grande, texto enxuto."""
+    """Opção 2: imagem grande no topo; nome/função/status no rodapé (abaixo da imagem)."""
     status, color = _status(pokemon, guild)
-    embed = discord.Embed(
-        title=pokemon.name,
-        description=f"{CATEGORY_LABEL.get(pokemon.category, pokemon.category)} · {status}",
-        color=color,
-    )
-    embed.set_footer(text=f"ID: {pokemon.id}")
+    role = CATEGORY_LABEL.get(pokemon.category, pokemon.category)
+    embed = discord.Embed(color=color)
     img = valid_image_url(pokemon.image_url)
     if img:
-        embed.set_image(url=img)  # bem maior que thumbnail
+        # Imagem no topo; tudo que é texto fica no rodapé (que renderiza abaixo da imagem)
+        embed.set_image(url=img)
+        embed.set_footer(text=f"{pokemon.name} · {role} · {status} | ID: {pokemon.id}")
+    else:
+        # Sem imagem: usa título/descrição para não ficar vazio
+        embed.title = pokemon.name
+        embed.description = f"{role} · {status}"
+        embed.set_footer(text=f"ID: {pokemon.id}")
     return embed
 
 
