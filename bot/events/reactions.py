@@ -5,6 +5,7 @@ from datetime import datetime
 from api.database import AsyncSessionLocal
 from api.models import Pokemon, History, User
 from bot.config import DISCORD_POKEMON_CHANNEL_ID
+from bot.commands.pokemon import build_pokemon_embed
 
 
 class ReactionCog(commands.Cog):
@@ -99,20 +100,10 @@ class ReactionCog(commands.Cog):
             ))
             await db.commit()
 
-        # Edita a mensagem para refletir o novo dono
-        guild   = self.bot.get_guild(payload.guild_id)
-        member  = guild.get_member(payload.user_id)
-        display = member.display_name if member else user_id
-
+        # Re-renderiza a mensagem com o status atualizado
+        guild = self.bot.get_guild(payload.guild_id)
         if message.embeds:
-            embed = message.embeds[0]
-            new_embed = embed.copy()
-            new_embed.color = discord.Color.green()
-            new_embed.description = (
-                f"✅ **{pokemon.name}** está sendo usado por **{display}**.\n"
-                "Retire a reação 🎯 para liberar."
-            )
-            await message.edit(embed=new_embed)
+            await message.edit(embed=build_pokemon_embed(pokemon, guild))
 
     @commands.Cog.listener()
     async def on_raw_reaction_remove(self, payload: discord.RawReactionActionEvent):
@@ -160,16 +151,10 @@ class ReactionCog(commands.Cog):
             ))
             await db.commit()
 
-        # Edita a mensagem para livre
+        # Re-renderiza a mensagem como livre
+        guild = self.bot.get_guild(payload.guild_id)
         if message.embeds:
-            embed = message.embeds[0]
-            new_embed = embed.copy()
-            new_embed.color = discord.Color.yellow()
-            new_embed.description = (
-                f"**{pokemon.name}** está livre para uso.\n"
-                "Reaja com 🎯 para marcar que vai usar."
-            )
-            await message.edit(embed=new_embed)
+            await message.edit(embed=build_pokemon_embed(pokemon, guild))
 
 
 async def setup(bot: commands.Bot):
