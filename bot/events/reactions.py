@@ -21,32 +21,19 @@ class ReactionCog(commands.Cog):
         if payload.channel_id != DISCORD_POKEMON_CHANNEL_ID:
             return
 
-        message_id = str(payload.message_id)
-        user_id    = str(payload.user_id)
+        user_id = str(payload.user_id)
 
         async with AsyncSessionLocal() as db:
-            # Encontra pokémon pelo message_id registrado na mensagem (guardamos via footer "ID: X")
-            channel = self.bot.get_channel(payload.channel_id)
-            message = await channel.fetch_message(payload.message_id)
-
-            # Extrai ID do pokémon do footer da embed
-            pokemon_id = None
-            if message.embeds:
-                footer_text = message.embeds[0].footer.text or ""
-                for part in footer_text.split("|"):
-                    part = part.strip()
-                    if part.startswith("ID:"):
-                        try:
-                            pokemon_id = int(part.split(":")[1].strip())
-                        except ValueError:
-                            pass
-
-            if pokemon_id is None:
-                return
-
-            pokemon = await db.get(Pokemon, pokemon_id)
+            # Encontra o pokémon pela mensagem do painel
+            pokemon = (await db.execute(
+                select(Pokemon).where(Pokemon.panel_message_id == str(payload.message_id))
+            )).scalar_one_or_none()
             if not pokemon:
                 return
+            pokemon_id = pokemon.id
+
+            channel = self.bot.get_channel(payload.channel_id)
+            message = await channel.fetch_message(payload.message_id)
 
             # Garante usuário no banco
             user = await db.get(User, user_id)
@@ -117,26 +104,15 @@ class ReactionCog(commands.Cog):
         user_id = str(payload.user_id)
 
         async with AsyncSessionLocal() as db:
-            channel = self.bot.get_channel(payload.channel_id)
-            message = await channel.fetch_message(payload.message_id)
-
-            pokemon_id = None
-            if message.embeds:
-                footer_text = message.embeds[0].footer.text or ""
-                for part in footer_text.split("|"):
-                    part = part.strip()
-                    if part.startswith("ID:"):
-                        try:
-                            pokemon_id = int(part.split(":")[1].strip())
-                        except ValueError:
-                            pass
-
-            if pokemon_id is None:
-                return
-
-            pokemon = await db.get(Pokemon, pokemon_id)
+            pokemon = (await db.execute(
+                select(Pokemon).where(Pokemon.panel_message_id == str(payload.message_id))
+            )).scalar_one_or_none()
             if not pokemon or pokemon.assigned_to != user_id:
                 return
+            pokemon_id = pokemon.id
+
+            channel = self.bot.get_channel(payload.channel_id)
+            message = await channel.fetch_message(payload.message_id)
 
             pokemon.assigned_to = None
             pokemon.assigned_at = None
