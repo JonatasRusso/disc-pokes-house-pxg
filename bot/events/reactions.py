@@ -4,7 +4,7 @@ from sqlalchemy import select
 from datetime import datetime
 from api.database import AsyncSessionLocal
 from api.models import Pokemon, History, User
-from bot.config import DISCORD_POKEMON_CHANNEL_ID
+from bot.config import POKEMON_CHANNEL_IDS
 from bot.commands.pokemon import build_pokemon_embed
 
 
@@ -18,7 +18,7 @@ class ReactionCog(commands.Cog):
             return
         if str(payload.emoji) != "🎯":
             return
-        if payload.channel_id != DISCORD_POKEMON_CHANNEL_ID:
+        if payload.channel_id not in POKEMON_CHANNEL_IDS:
             return
 
         user_id = str(payload.user_id)
@@ -98,7 +98,7 @@ class ReactionCog(commands.Cog):
             return
         if str(payload.emoji) != "🎯":
             return
-        if payload.channel_id != DISCORD_POKEMON_CHANNEL_ID:
+        if payload.channel_id not in POKEMON_CHANNEL_IDS:
             return
 
         user_id = str(payload.user_id)

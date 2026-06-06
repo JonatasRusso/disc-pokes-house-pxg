@@ -7,7 +7,7 @@ from sqlalchemy import select
 
 from api.database import AsyncSessionLocal
 from api.models import Pokemon, User
-from bot.config import DISCORD_POKEMON_CHANNEL_ID
+from bot.config import POKEMON_CHANNELS
 
 log = logging.getLogger(__name__)
 
@@ -95,49 +95,63 @@ class PokemonCog(commands.Cog):
                     select(Pokemon).order_by(Pokemon.category, Pokemon.name)
                 )).scalars().all()
 
-            channel = interaction.guild.get_channel(DISCORD_POKEMON_CHANNEL_ID) if interaction.guild else None
-            if channel is None:
-                try:
-                    channel = await self.bot.fetch_channel(DISCORD_POKEMON_CHANNEL_ID)
-                except Exception:
-                    channel = None
-            if channel is None:
-                await interaction.followup.send(
-                    f"Canal de pokémons (ID `{DISCORD_POKEMON_CHANNEL_ID}`) não encontrado.", ephemeral=True)
-                return
-
-            perms = channel.permissions_for(interaction.guild.me)
-            missing = [n for n, ok in [
-                ("Ver Canal", perms.view_channel), ("Enviar Mensagens", perms.send_messages),
-                ("Inserir Links (Embeds)", perms.embed_links), ("Adicionar Reações", perms.add_reactions),
-            ] if not ok]
-            if missing:
-                await interaction.followup.send(
-                    f"O bot não tem permissão em {channel.mention}: faltando **{', '.join(missing)}**.", ephemeral=True)
-                return
             if not pokemons:
                 await interaction.followup.send(
                     "Nenhum pokémon cadastrado. Adicione pela aba **Pokémons** no site.", ephemeral=True)
                 return
 
-            try:
-                await channel.purge(limit=300, check=lambda m: m.author == self.bot.user)
-            except Exception as e:
-                log.warning(f"purge falhou: {e}")
+            async def _resolve(cid):
+                ch = interaction.guild.get_channel(cid) if (cid and interaction.guild) else None
+                if ch is None and cid:
+                    try:
+                        ch = await self.bot.fetch_channel(cid)
+                    except Exception:
+                        ch = None
+                return ch
 
-            await channel.send("🎯 **Painel de Pokémons** — reaja 🎯 para marcar, remova para liberar.")
             posted: dict[int, str] = {}
+            purged: set[int] = set()
+            used_channels: set = set()
             for cat in ["A", "B", "C"]:
                 group = [p for p in pokemons if p.category == cat]
                 if not group:
                     continue
+                cid = POKEMON_CHANNELS.get(cat)
+                channel = await _resolve(cid)
+                if channel is None:
+                    await interaction.followup.send(
+                        f"Canal de **{CATEGORY_LABEL[cat]}** (ID `{cid}`) não encontrado. "
+                        "Verifique as variáveis `DISCORD_POKEMON_CHANNEL_*` no Railway.", ephemeral=True)
+                    return
+
+                perms = channel.permissions_for(interaction.guild.me)
+                missing = [n for n, ok in [
+                    ("Ver Canal", perms.view_channel), ("Enviar Mensagens", perms.send_messages),
+                    ("Inserir Links (Embeds)", perms.embed_links), ("Adicionar Reações", perms.add_reactions),
+                ] if not ok]
+                if missing:
+                    await interaction.followup.send(
+                        f"Sem permissão em {channel.mention} (**{CATEGORY_LABEL[cat]}**): faltando **{', '.join(missing)}**.",
+                        ephemeral=True)
+                    return
+
+                # Limpa o canal uma vez (vários grupos podem cair no mesmo canal se usar o canal único)
+                if channel.id not in purged:
+                    try:
+                        await channel.purge(limit=300, check=lambda m: m.author == self.bot.user)
+                    except Exception as e:
+                        log.warning(f"purge falhou em {channel.id}: {e}")
+                    purged.add(channel.id)
+                    await channel.send("🎯 **Painel de Pokémons** — reaja 🎯 para marcar, remova para liberar.")
+
                 await channel.send(f"__**{CATEGORY_LABEL[cat]}**__")
                 for p in group:
                     msg = await channel.send(embed=build_pokemon_embed(p, interaction.guild))
                     await msg.add_reaction("🎯")
                     posted[p.id] = str(msg.id)
+                used_channels.add(channel.mention)
 
-            # Liga cada mensagem ao pokémon (substitui o ID que ficava visível no card)
+            # Liga cada mensagem ao pokémon
             async with AsyncSessionLocal() as db:
                 for pid, mid in posted.items():
                     pk = await db.get(Pokemon, pid)
@@ -145,7 +159,8 @@ class PokemonCog(commands.Cog):
                         pk.panel_message_id = mid
                 await db.commit()
 
-            await interaction.followup.send(f"✅ Painel postado em {channel.mention} ({len(posted)}).", ephemeral=True)
+            await interaction.followup.send(
+                f"✅ Painel postado em {', '.join(used_channels)} ({len(posted)} pokémons).", ephemeral=True)
         except Exception as e:
             log.exception("Erro no /pokemon-painel")
             await interaction.followup.send(f"Erro: `{e}`", ephemeral=True)
