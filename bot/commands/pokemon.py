@@ -1,3 +1,4 @@
+import logging
 import discord
 from discord import app_commands
 from discord.ext import commands
@@ -6,6 +7,7 @@ from api.database import AsyncSessionLocal
 from api.models import Pokemon, User
 from bot.config import DISCORD_POKEMON_CHANNEL_ID
 
+log = logging.getLogger(__name__)
 
 CATEGORY_LABEL = {"A": "Tank", "B": "DPS", "C": "Sup"}
 
@@ -86,45 +88,93 @@ class PokemonCog(commands.Cog):
 
     @app_commands.command(name="pokemon-painel", description="(Admin) Postar/atualizar o painel de pokémons no canal")
     async def pokemon_painel(self, interaction: discord.Interaction):
-        async with AsyncSessionLocal() as db:
-            user = await db.get(User, str(interaction.user.id))
-            if not user or not user.is_admin:
-                await interaction.response.send_message("Apenas admins podem postar o painel.", ephemeral=True)
-                return
-            pokemons = (await db.execute(
-                select(Pokemon).order_by(Pokemon.category, Pokemon.name)
-            )).scalars().all()
-
-        channel = interaction.guild.get_channel(DISCORD_POKEMON_CHANNEL_ID)
-        if not channel:
-            await interaction.response.send_message("Canal de pokémons não configurado.", ephemeral=True)
-            return
-        if not pokemons:
-            await interaction.response.send_message(
-                "Nenhum pokémon cadastrado. Adicione pela aba **Pokémons** no site.", ephemeral=True
-            )
-            return
-
-        await interaction.response.send_message(f"Postando o painel em {channel.mention}...", ephemeral=True)
-
-        # Remove o painel anterior do bot neste canal
+        # Defer evita timeout de 3s e permite responder erros depois do trabalho
+        await interaction.response.defer(ephemeral=True)
         try:
-            await channel.purge(limit=300, check=lambda m: m.author == self.bot.user)
-        except discord.Forbidden:
-            pass
+            async with AsyncSessionLocal() as db:
+                user = await db.get(User, str(interaction.user.id))
+                is_admin = bool(user and user.is_admin)
+                if not is_admin and interaction.guild and interaction.guild.owner_id == interaction.user.id:
+                    is_admin = True
+                if not is_admin:
+                    await interaction.followup.send(
+                        "Apenas admins podem postar o painel. Peça para o dono usar `/admin` em você.",
+                        ephemeral=True,
+                    )
+                    return
+                pokemons = (await db.execute(
+                    select(Pokemon).order_by(Pokemon.category, Pokemon.name)
+                )).scalars().all()
 
-        await channel.send(
-            "🎯 **Painel de Pokémons da VKG House**\n"
-            "Reaja com 🎯 em um pokémon para marcar que vai usá-lo. Remova a reação para liberar."
-        )
-        for cat in ["A", "B", "C"]:
-            group = [p for p in pokemons if p.category == cat]
-            if not group:
-                continue
-            await channel.send(f"__**{CATEGORY_LABEL[cat]}**__")
-            for p in group:
-                msg = await channel.send(embed=build_pokemon_embed(p, interaction.guild))
-                await msg.add_reaction("🎯")
+            # Resolve o canal de pokémons
+            channel = interaction.guild.get_channel(DISCORD_POKEMON_CHANNEL_ID) if interaction.guild else None
+            if channel is None:
+                try:
+                    channel = await self.bot.fetch_channel(DISCORD_POKEMON_CHANNEL_ID)
+                except Exception:
+                    channel = None
+            if channel is None:
+                await interaction.followup.send(
+                    f"Canal de pokémons (ID `{DISCORD_POKEMON_CHANNEL_ID}`) não encontrado. "
+                    "Verifique a variável `DISCORD_POKEMON_CHANNEL_ID` no Railway.",
+                    ephemeral=True,
+                )
+                return
+
+            # Confere permissões do bot no canal
+            perms = channel.permissions_for(interaction.guild.me)
+            missing = [n for n, ok in [
+                ("Ver Canal", perms.view_channel),
+                ("Enviar Mensagens", perms.send_messages),
+                ("Inserir Links (Embeds)", perms.embed_links),
+                ("Adicionar Reações", perms.add_reactions),
+            ] if not ok]
+            if missing:
+                await interaction.followup.send(
+                    f"O bot não tem permissão em {channel.mention}: faltando **{', '.join(missing)}**.",
+                    ephemeral=True,
+                )
+                return
+
+            if not pokemons:
+                await interaction.followup.send(
+                    "Nenhum pokémon cadastrado ainda. Adicione pela aba **Pokémons** no site primeiro.",
+                    ephemeral=True,
+                )
+                return
+
+            # Limpa o painel anterior do bot neste canal
+            try:
+                await channel.purge(limit=300, check=lambda m: m.author == self.bot.user)
+            except discord.Forbidden:
+                pass
+            except Exception as e:
+                log.warning(f"purge do painel falhou: {e}")
+
+            await channel.send(
+                "🎯 **Painel de Pokémons da VKG House**\n"
+                "Reaja com 🎯 em um pokémon para marcar que vai usá-lo. Remova a reação para liberar."
+            )
+            count = 0
+            for cat in ["A", "B", "C"]:
+                group = [p for p in pokemons if p.category == cat]
+                if not group:
+                    continue
+                await channel.send(f"__**{CATEGORY_LABEL[cat]}**__")
+                for p in group:
+                    msg = await channel.send(embed=build_pokemon_embed(p, interaction.guild))
+                    await msg.add_reaction("🎯")
+                    count += 1
+
+            await interaction.followup.send(
+                f"✅ Painel postado em {channel.mention} ({count} pokémons).", ephemeral=True
+            )
+        except Exception as e:
+            log.exception("Erro no /pokemon-painel")
+            try:
+                await interaction.followup.send(f"Erro ao postar o painel: `{e}`", ephemeral=True)
+            except Exception:
+                pass
 
 
 async def setup(bot: commands.Bot):
