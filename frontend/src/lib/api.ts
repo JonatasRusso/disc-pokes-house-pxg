@@ -38,6 +38,12 @@ export const reschedule = (id: number, new_start: string) =>
   req<Schedule>(`/schedules/${id}/reschedule`, { method: "PATCH", body: JSON.stringify({ new_start }) });
 export const cancelSchedule = (id: number) =>
   req<{ ok: boolean }>(`/schedules/${id}`, { method: "DELETE" });
+export const confirmPresence = (id: number) =>
+  req<{ ok: boolean }>(`/schedules/${id}/confirm`, { method: "POST" });
+export const leaveParty = (id: number) =>
+  req<{ ok: boolean; cancelled: boolean }>(`/schedules/${id}/leave`, { method: "POST" });
+export const setMyCharacter = (id: number, character_id: number) =>
+  req<{ ok: boolean }>(`/schedules/${id}/my-character`, { method: "PATCH", body: JSON.stringify({ character_id }) });
 
 // --- Pokémon ---
 export const getPokemon = () => req<Pokemon[]>("/pokemon");
@@ -93,6 +99,7 @@ export interface Schedule {
   organizer_id: string | null;
   status: "pending" | "confirmed" | "rescheduled" | "missed" | "cancelled";
   members: ScheduleMember[];
+  is_member: boolean;
 }
 
 export interface ScheduleMember {
@@ -100,6 +107,7 @@ export interface ScheduleMember {
   nick: string;
   role: "DPS" | "SUP" | "TANK";
   character: string | null;
+  confirmed?: boolean;
 }
 
 export interface CalendarParty {

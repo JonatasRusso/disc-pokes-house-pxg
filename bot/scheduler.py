@@ -57,6 +57,8 @@ async def _process_outbox(bot: discord.Client):
             try:
                 if item.kind == "party_invite":
                     await _send_party_invite(channel, item)
+                elif item.kind == "party_left":
+                    await _send_party_left(channel, item)
                 item.sent_at = now
             except Exception as e:
                 age = now - (item.created_at or now)
@@ -94,6 +96,23 @@ async def _send_party_invite(channel: discord.TextChannel, item: Outbox):
         title="🎉 Convite de Party",
         description=desc,
         color=discord.Color.blurple(),
+    )
+    await channel.send(
+        content=f"<@{item.target_user_id}>",
+        embed=embed,
+        allowed_mentions=discord.AllowedMentions(users=True),
+    )
+
+
+async def _send_party_left(channel: discord.TextChannel, item: Outbox):
+    data = json.loads(item.payload or "{}")
+    who = data.get("who", "Alguém")
+    sid = data.get("schedule_id")
+    embed = discord.Embed(
+        title="🚪 Saída de Party",
+        description=f"<@{item.target_user_id}>, **{who}** saiu da sua PT (#{sid}). "
+                    "Talvez seja preciso chamar outra pessoa.",
+        color=discord.Color.orange(),
     )
     await channel.send(
         content=f"<@{item.target_user_id}>",

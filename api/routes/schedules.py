@@ -115,7 +115,26 @@ async def list_schedules(user: User = Depends(get_current_user), db: AsyncSessio
     )
     schedules = result.scalars().unique().all()
     mmap = await _party_members_map(db, [s.party_id for s in schedules])
-    return [{**_schedule_dict(s), "members": mmap.get(s.party_id, [])} for s in schedules]
+
+    # Confirmações por (schedule_id, user_id)
+    schedule_ids = [s.id for s in schedules]
+    conf_map: dict[tuple[int, str], bool] = {}
+    if schedule_ids:
+        confs = await db.execute(
+            select(ScheduleConfirmation).where(ScheduleConfirmation.schedule_id.in_(schedule_ids))
+        )
+        conf_map = {(c.schedule_id, c.user_id): c.confirmed for c in confs.scalars().all()}
+
+    out = []
+    for s in schedules:
+        members = [
+            {**m, "confirmed": conf_map.get((s.id, m["discord_id"]), False)}
+            for m in mmap.get(s.party_id, [])
+        ]
+        out.append({**_schedule_dict(s), "members": members, "is_member": any(
+            m["discord_id"] == user.discord_id for m in members
+        )})
+    return out
 
 
 @router.get("/calendar")
@@ -311,6 +330,110 @@ async def reschedule(schedule_id: int, body: RescheduleIn, user: User = Depends(
     ))
     await db.commit()
     return _schedule_dict(schedule)
+
+
+async def _my_membership(db: AsyncSession, schedule: Schedule, user_id: str) -> PartyMember | None:
+    res = await db.execute(
+        select(PartyMember).where(
+            PartyMember.party_id == schedule.party_id,
+            PartyMember.user_id == user_id,
+        )
+    )
+    return res.scalar_one_or_none()
+
+
+@router.post("/{schedule_id}/confirm")
+async def confirm_presence(schedule_id: int, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Membro confirma presença na PT."""
+    schedule = await db.get(Schedule, schedule_id)
+    if not schedule:
+        raise HTTPException(404, "Horário não encontrado")
+    pm = await _my_membership(db, schedule, user.discord_id)
+    if not pm:
+        raise HTTPException(403, "Você não é membro desta party")
+    if pm.character_id is None:
+        raise HTTPException(400, "Defina seu personagem antes de confirmar.")
+
+    conf = await db.execute(
+        select(ScheduleConfirmation).where(
+            ScheduleConfirmation.schedule_id == schedule_id,
+            ScheduleConfirmation.user_id == user.discord_id,
+        )
+    )
+    conf = conf.scalar_one_or_none()
+    if not conf:
+        conf = ScheduleConfirmation(schedule_id=schedule_id, user_id=user.discord_id)
+        db.add(conf)
+    conf.confirmed = True
+    db.add(History(actor_id=user.discord_id, entity_type="schedule", entity_id=schedule_id, action="confirmed"))
+    await db.commit()
+    return {"ok": True}
+
+
+@router.post("/{schedule_id}/leave")
+async def leave_party(schedule_id: int, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Membro sai da PT. Se a PT ficar vazia, é cancelada."""
+    schedule = await db.get(Schedule, schedule_id)
+    if not schedule:
+        raise HTTPException(404, "Horário não encontrado")
+    pm = await _my_membership(db, schedule, user.discord_id)
+    if not pm:
+        raise HTTPException(403, "Você não é membro desta party")
+
+    await db.delete(pm)
+    conf = await db.execute(
+        select(ScheduleConfirmation).where(
+            ScheduleConfirmation.schedule_id == schedule_id,
+            ScheduleConfirmation.user_id == user.discord_id,
+        )
+    )
+    conf = conf.scalar_one_or_none()
+    if conf:
+        await db.delete(conf)
+    await db.flush()
+
+    remaining = (await db.execute(
+        select(PartyMember).where(PartyMember.party_id == schedule.party_id)
+    )).scalars().all()
+    if not remaining:
+        schedule.status = "cancelled"
+
+    db.add(History(actor_id=user.discord_id, entity_type="schedule", entity_id=schedule_id, action="left"))
+
+    # Avisa os demais membros no canal
+    for m in remaining:
+        db.add(Outbox(kind="party_left", target_user_id=m.user_id, payload=json.dumps({
+            "who": user.username, "schedule_id": schedule_id,
+        })))
+    await db.commit()
+    return {"ok": True, "cancelled": not remaining}
+
+
+class MyCharIn(BaseModel):
+    character_id: int
+
+
+@router.patch("/{schedule_id}/my-character")
+async def set_my_character(schedule_id: int, body: MyCharIn, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Membro define/confirma o personagem que vai usar na PT."""
+    schedule = await db.get(Schedule, schedule_id)
+    if not schedule:
+        raise HTTPException(404, "Horário não encontrado")
+    pm = await _my_membership(db, schedule, user.discord_id)
+    if not pm:
+        raise HTTPException(403, "Você não é membro desta party")
+
+    char = await db.get(Character, body.character_id)
+    if not char or char.user_id != user.discord_id:
+        raise HTTPException(404, "Personagem não encontrado")
+
+    occupied = await _occupied_character_ids(db)
+    if body.character_id in occupied and pm.character_id != body.character_id:
+        raise HTTPException(400, f"Personagem '{char.name}' já está em uma PT ativa.")
+
+    pm.character_id = body.character_id
+    await db.commit()
+    return {"ok": True}
 
 
 @router.delete("/{schedule_id}")

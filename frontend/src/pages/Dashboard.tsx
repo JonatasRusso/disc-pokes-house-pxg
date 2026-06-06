@@ -1,7 +1,11 @@
-import { useQuery } from "@tanstack/react-query";
-import { getSchedules, getPokemon, getHistory, WEEKDAY_LABEL } from "../lib/api";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  getSchedules, getPokemon, getCharacters, WEEKDAY_LABEL,
+  confirmPresence, leaveParty, setMyCharacter, Schedule,
+} from "../lib/api";
 import { useAuth } from "../lib/useAuth";
 import { Link } from "react-router-dom";
+import { useState } from "react";
 
 const STATUS_COLOR: Record<string, string> = {
   pending:     "bg-yellow-600",
@@ -46,43 +50,7 @@ export default function Dashboard() {
         ) : (
           <div className="grid gap-3">
             {upcoming.map((s) => (
-              <div key={s.id} className="bg-gray-900 rounded-lg p-4">
-                <div className="flex items-center gap-4">
-                  <span className={`text-xs px-2 py-0.5 rounded-full text-white font-medium ${STATUS_COLOR[s.status]}`}>
-                    {s.status}
-                  </span>
-                  <div>
-                    <p className="font-medium">
-                      {s.difficulty} <span className="text-gray-500 text-xs font-normal">· toda semana</span>
-                      {s.organizer_id === user?.discord_id && (
-                        <span className="ml-2 text-[10px] bg-gray-700 text-gray-300 px-1.5 py-0.5 rounded">organizada por você</span>
-                      )}
-                    </p>
-                    <p className="text-gray-400 text-sm">
-                      🔁 Toda <strong>{WEEKDAY_LABEL[s.weekday]}</strong> {String(s.hour).padStart(2, "0")}:00 → {String((s.hour + 3) % 24).padStart(2, "0")}:00
-                    </p>
-                    <p className="text-gray-600 text-xs">
-                      Próxima: {new Date(s.start_time).toLocaleDateString("pt-BR")}
-                    </p>
-                  </div>
-                  <Link to={`/remarcar/${s.id}`} className="ml-auto text-sm text-gray-500 hover:text-orange-400 transition-colors">
-                    Remarcar
-                  </Link>
-                </div>
-
-                {/* Membros e posições */}
-                {s.members.length > 0 && (
-                  <div className="mt-3 pt-3 border-t border-gray-800 grid grid-cols-2 sm:grid-cols-4 gap-2">
-                    {s.members.map((m) => (
-                      <div key={m.discord_id} className="flex flex-col">
-                        <span className={`text-[10px] font-bold ${ROLE_COLOR[m.role]}`}>{m.role}</span>
-                        <span className="text-sm">{m.nick}</span>
-                        {m.character && <span className="text-xs text-gray-500">{m.character}</span>}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
+              <ScheduleCard key={s.id} schedule={s} myId={user?.discord_id ?? ""} />
             ))}
           </div>
         )}
@@ -112,6 +80,109 @@ export default function Dashboard() {
           </div>
         )}
       </section>
+    </div>
+  );
+}
+
+function ScheduleCard({ schedule: s, myId }: { schedule: Schedule; myId: string }) {
+  const qc = useQueryClient();
+  const me = s.members.find((m) => m.discord_id === myId);
+  const [pickChar, setPickChar] = useState<number | "">("");
+
+  const { data: chars = [] } = useQuery({ queryKey: ["characters"], queryFn: getCharacters });
+  const refresh = () => qc.invalidateQueries({ queryKey: ["schedules"] });
+
+  const confirm = useMutation({ mutationFn: () => confirmPresence(s.id), onSuccess: refresh });
+  const leave   = useMutation({ mutationFn: () => leaveParty(s.id), onSuccess: refresh });
+  const setChar = useMutation({ mutationFn: (cid: number) => setMyCharacter(s.id, cid), onSuccess: refresh });
+
+  return (
+    <div className="bg-gray-900 rounded-lg p-4">
+      <div className="flex items-center gap-4">
+        <span className={`text-xs px-2 py-0.5 rounded-full text-white font-medium ${STATUS_COLOR[s.status]}`}>
+          {s.status}
+        </span>
+        <div>
+          <p className="font-medium">
+            {s.difficulty} <span className="text-gray-500 text-xs font-normal">· toda semana</span>
+            {s.organizer_id === myId && (
+              <span className="ml-2 text-[10px] bg-gray-700 text-gray-300 px-1.5 py-0.5 rounded">organizada por você</span>
+            )}
+          </p>
+          <p className="text-gray-400 text-sm">
+            🔁 Toda <strong>{WEEKDAY_LABEL[s.weekday]}</strong> {String(s.hour).padStart(2, "0")}:00 → {String((s.hour + 3) % 24).padStart(2, "0")}:00
+          </p>
+          <p className="text-gray-600 text-xs">Próxima: {new Date(s.start_time).toLocaleDateString("pt-BR")}</p>
+        </div>
+        <Link to={`/remarcar/${s.id}`} className="ml-auto text-sm text-gray-500 hover:text-orange-400 transition-colors">
+          Remarcar
+        </Link>
+      </div>
+
+      {/* Membros, posições e status */}
+      {s.members.length > 0 && (
+        <div className="mt-3 pt-3 border-t border-gray-800 grid grid-cols-2 sm:grid-cols-4 gap-2">
+          {s.members.map((m) => (
+            <div key={m.discord_id} className="flex flex-col">
+              <span className={`text-[10px] font-bold ${ROLE_COLOR[m.role]}`}>{m.role}</span>
+              <span className="text-sm">{m.nick}</span>
+              <span className="text-xs text-gray-500">{m.character ?? "⚠️ sem personagem"}</span>
+              <span className={`text-[10px] ${m.confirmed ? "text-green-400" : "text-yellow-500"}`}>
+                {m.confirmed ? "✅ confirmou" : "⏳ pendente"}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Ações do usuário (se for membro) */}
+      {me && (
+        <div className="mt-3 pt-3 border-t border-gray-800 flex flex-wrap items-center gap-2">
+          {!me.character ? (
+            <div className="flex items-center gap-2">
+              <select
+                className="bg-gray-800 rounded px-2 py-1 text-sm"
+                value={pickChar}
+                onChange={(e) => setPickChar(e.target.value ? Number(e.target.value) : "")}
+              >
+                <option value="">Definir meu personagem...</option>
+                {chars.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+              <button
+                onClick={() => pickChar && setChar.mutate(pickChar as number)}
+                disabled={!pickChar || setChar.isPending}
+                className="bg-brand hover:bg-brand-dark disabled:opacity-40 text-white text-xs px-3 py-1 rounded"
+              >
+                Salvar
+              </button>
+            </div>
+          ) : me.confirmed ? (
+            <span className="text-green-400 text-sm">✅ Você confirmou presença</span>
+          ) : (
+            <button
+              onClick={() => confirm.mutate()}
+              disabled={confirm.isPending}
+              className="bg-green-600 hover:bg-green-700 disabled:opacity-40 text-white text-xs px-3 py-1 rounded"
+            >
+              Confirmar presença
+            </button>
+          )}
+
+          <button
+            onClick={() => { if (window.confirm("Sair desta PT?")) leave.mutate(); }}
+            disabled={leave.isPending}
+            className="ml-auto text-red-500 hover:text-red-400 text-xs hover:underline"
+          >
+            Sair da PT
+          </button>
+        </div>
+      )}
+
+      {(confirm.isError || leave.isError || setChar.isError) && (
+        <p className="mt-2 text-red-400 text-xs">
+          {((confirm.error || leave.error || setChar.error) as Error | null)?.message}
+        </p>
+      )}
     </div>
   );
 }
