@@ -17,6 +17,12 @@ class PokemonIn(BaseModel):
     category: str
 
 
+class PokemonUpdate(BaseModel):
+    name: str | None = None
+    image_url: str | None = None
+    category: str | None = None
+
+
 @router.get("")
 async def list_pokemon(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Pokemon).order_by(Pokemon.category, Pokemon.name))
@@ -49,6 +55,34 @@ async def create_pokemon(body: PokemonIn, admin: User = Depends(require_admin), 
     await db.commit()
     await db.refresh(p)
     return _poke_dict(p)
+
+
+@router.patch("/{pokemon_id}")
+async def update_pokemon(pokemon_id: int, body: PokemonUpdate, admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    p = await db.get(Pokemon, pokemon_id)
+    if not p:
+        raise HTTPException(404, "Pokémon não encontrado")
+    if body.name is not None:
+        p.name = body.name.strip()
+    if body.category is not None:
+        if body.category not in ("A", "B", "C"):
+            raise HTTPException(400, "Categoria inválida. Use A, B ou C.")
+        p.category = body.category
+    if body.image_url is not None:
+        p.image_url = _clean_image_url(body.image_url)
+    await db.commit()
+    await db.refresh(p)
+    return _poke_dict(p)
+
+
+@router.delete("/{pokemon_id}")
+async def delete_pokemon(pokemon_id: int, admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    p = await db.get(Pokemon, pokemon_id)
+    if not p:
+        raise HTTPException(404, "Pokémon não encontrado")
+    await db.delete(p)
+    await db.commit()
+    return {"ok": True}
 
 
 @router.patch("/{pokemon_id}/assign")
