@@ -37,12 +37,16 @@ def start_scheduler(bot: discord.Client):
     return scheduler
 
 
+OUTBOX_GIVEUP = timedelta(minutes=15)  # abandona item que não envia há 15 min (ex: bot sem permissão)
+
+
 async def _process_outbox(bot: discord.Client):
     """Envia mensagens enfileiradas pela API (convites de PT, etc)."""
     channel = bot.get_channel(DISCORD_NOTIFY_CHANNEL_ID)
     if not channel:
         return
 
+    now = datetime.utcnow()
     async with AsyncSessionLocal() as db:
         result = await db.execute(
             select(Outbox).where(Outbox.sent_at.is_(None)).order_by(Outbox.id).limit(20)
@@ -53,10 +57,14 @@ async def _process_outbox(bot: discord.Client):
             try:
                 if item.kind == "party_invite":
                     await _send_party_invite(channel, item)
+                item.sent_at = now
             except Exception as e:
-                log.warning(f"Falha ao enviar outbox #{item.id}: {e}")
-                continue
-            item.sent_at = datetime.utcnow()
+                age = now - (item.created_at or now)
+                if age > OUTBOX_GIVEUP:
+                    item.sent_at = now  # abandona para não ficar reenviando pra sempre
+                    log.warning(f"Outbox #{item.id} abandonado após {age} sem enviar: {e}")
+                else:
+                    log.warning(f"Falha ao enviar outbox #{item.id} (vai tentar de novo): {e}")
 
         await db.commit()
 
