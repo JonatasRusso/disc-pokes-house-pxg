@@ -1,9 +1,9 @@
 import discord
 from discord.ext import commands
 from sqlalchemy import select
-from datetime import datetime
 from api.database import AsyncSessionLocal
 from api.models import Pokemon, History, User
+from api.timeutil import now_local
 from bot.config import POKEMON_CHANNEL_IDS
 from bot.commands.pokemon import build_pokemon_embed
 
@@ -71,11 +71,11 @@ class ReactionCog(commands.Cog):
                     entity_id=pokemon_id,
                     action="overridden",
                     detail=f'{{"from":"{previous_owner_id}","to":"{user_id}"}}',
-                    happened_at=datetime.utcnow(),
+                    happened_at=now_local(),
                 ))
 
             pokemon.assigned_to  = user_id
-            pokemon.assigned_at  = datetime.utcnow()
+            pokemon.assigned_at  = now_local()
 
             db.add(History(
                 actor_id=user_id,
@@ -83,7 +83,7 @@ class ReactionCog(commands.Cog):
                 entity_id=pokemon_id,
                 action="assigned",
                 detail=f'{{"pokemon":"{pokemon.name}"}}',
-                happened_at=datetime.utcnow(),
+                happened_at=now_local(),
             ))
             await db.commit()
 
@@ -123,7 +123,7 @@ class ReactionCog(commands.Cog):
                 entity_id=pokemon_id,
                 action="unassigned",
                 detail=f'{{"pokemon":"{pokemon.name}"}}',
-                happened_at=datetime.utcnow(),
+                happened_at=now_local(),
             ))
             await db.commit()
 

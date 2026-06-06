@@ -6,7 +6,7 @@ Scheduler de notificações de horários de party.
 import asyncio
 import json
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 
 import discord
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -14,6 +14,7 @@ from sqlalchemy import select
 
 from api.database import AsyncSessionLocal
 from api.models import Outbox, Pokemon, Schedule, ScheduleConfirmation, PartyMember, User
+from api.timeutil import now_local
 from bot.config import DISCORD_NOTIFY_CHANNEL_ID, POKEMON_CHANNELS, SITE_URL
 
 log = logging.getLogger(__name__)
@@ -58,7 +59,7 @@ async def _process_outbox(bot: discord.Client):
     if not channel:
         return
 
-    now = datetime.utcnow()
+    now = now_local()
     async with AsyncSessionLocal() as db:
         result = await db.execute(
             select(Outbox).where(Outbox.sent_at.is_(None)).order_by(Outbox.id).limit(20)
@@ -135,7 +136,7 @@ async def _send_party_left(channel: discord.TextChannel, item: Outbox):
 
 async def _rollover_recurring():
     """Recorrência semanal: parties que já terminaram avançam para a próxima semana."""
-    now = datetime.utcnow()
+    now = now_local()
     async with AsyncSessionLocal() as db:
         result = await db.execute(
             select(Schedule).where(
@@ -165,11 +166,12 @@ async def _rollover_recurring():
 async def _check_schedules(bot: discord.Client):
     await _rollover_recurring()
 
-    now = datetime.utcnow()
+    now = now_local()
     channel = bot.get_channel(DISCORD_NOTIFY_CHANNEL_ID)
     if not channel:
         return
 
+    seen_keys: set[tuple[int, str]] = set()
     async with AsyncSessionLocal() as db:
         # Schedules ativos que começam em até 24h ou começaram há até 30 min
         result = await db.execute(
@@ -195,6 +197,7 @@ async def _check_schedules(bot: discord.Client):
 
             for member in members:
                 key = (schedule.id, member.user_id)
+                seen_keys.add(key)
                 st = _warn_state.get(key)
                 # Ocorrência mudou (rollover/remarcação): limpa
                 if st and st.get("iso") != iso:
@@ -253,6 +256,10 @@ async def _check_schedules(bot: discord.Client):
                 conf.last_ping = now
 
         await db.commit()
+
+    # Limpa estado de avisos de PTs que saíram da janela (evita acúmulo em memória)
+    for k in [k for k in _warn_state if k not in seen_keys]:
+        _warn_state.pop(k, None)
 
 
 async def _pokemon_pt_reminder(bot: discord.Client, db, schedule: Schedule, members: list):

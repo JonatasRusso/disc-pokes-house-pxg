@@ -12,6 +12,7 @@ from api.models import (
     Character, History, Outbox, Party, PartyMember, Schedule,
     ScheduleConfirmation, User
 )
+from api.timeutil import now_local
 
 router = APIRouter(prefix="/schedules", tags=["schedules"])
 
@@ -166,7 +167,7 @@ async def free_slots(db: AsyncSession = Depends(get_db)):
     """Grade semanal recorrente: para cada hora (00:00..23:00) dos 7 dias da semana,
     retorna o bloco de 3h com flag `free`. Sem trava de horário — escolher um dia já
     passado nesta semana agenda para a próxima semana. Livre = sem conflito recorrente."""
-    day_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    day_start = now_local().replace(hour=0, minute=0, second=0, microsecond=0)
     end       = day_start + timedelta(days=7)
 
     busy = await _busy_weekday_hours(db)
@@ -203,7 +204,7 @@ async def create_schedule(body: ScheduleIn, user: User = Depends(get_current_use
             raise HTTPException(400, "Informe ao menos um membro para a PT.")
 
     # Recorrência semanal: calcula a próxima ocorrência do dia-da-semana/hora escolhidos
-    start_time = next_occurrence(body.start_time.weekday(), body.start_time.hour, datetime.utcnow())
+    start_time = next_occurrence(body.start_time.weekday(), body.start_time.hour, now_local())
 
     # Conflito de horário (marcar trava o horário + 2 horas posteriores)
     busy = await _busy_weekday_hours(db)
@@ -306,7 +307,7 @@ async def reschedule(schedule_id: int, body: RescheduleIn, user: User = Depends(
     if not await _can_manage(db, schedule, user):
         raise HTTPException(403, "Apenas líder/co-líder podem remarcar a PT.")
 
-    new_start = next_occurrence(body.new_start.weekday(), body.new_start.hour, datetime.utcnow())
+    new_start = next_occurrence(body.new_start.weekday(), body.new_start.hour, now_local())
     # Evita conflito com outras PTs (ignora a própria)
     busy = [(wd, h) for (wd, h) in await _busy_weekday_hours(db)
             if not (wd == schedule.start_time.weekday() and h == schedule.start_time.hour)]

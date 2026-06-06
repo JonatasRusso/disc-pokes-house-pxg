@@ -4,6 +4,8 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import DeclarativeBase, relationship
 
+from api.timeutil import now_local
+
 
 class Base(DeclarativeBase):
     pass
@@ -127,7 +129,7 @@ class History(Base):
     entity_id   = Column(Integer)
     action      = Column(String, nullable=False)
     detail      = Column(Text)
-    happened_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    happened_at = Column(DateTime, nullable=False, default=now_local)
 
     actor = relationship("User", back_populates="history")
 
@@ -140,5 +142,5 @@ class Outbox(Base):
     kind           = Column(String, nullable=False)   # ex: 'party_invite'
     target_user_id = Column(String, nullable=False)   # discord_id do destinatário
     payload        = Column(Text)                      # JSON com contexto
-    created_at     = Column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at     = Column(DateTime, nullable=False, default=now_local)
     sent_at        = Column(DateTime)                  # NULL = ainda não enviado

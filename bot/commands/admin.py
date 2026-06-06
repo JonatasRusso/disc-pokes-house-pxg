@@ -3,7 +3,7 @@ from discord import app_commands
 from discord.ext import commands
 from api.database import AsyncSessionLocal
 from api.models import User, History
-from datetime import datetime
+from api.timeutil import now_local
 
 
 class AdminCog(commands.Cog):
@@ -40,7 +40,7 @@ class AdminCog(commands.Cog):
                 entity_id=None,
                 action="admin_granted" if acao == "grant" else "admin_revoked",
                 detail=f'{{"target":"{target_id}","username":"{usuario.name}"}}',
-                happened_at=datetime.utcnow(),
+                happened_at=now_local(),
             )
             db.add(log)
             await db.commit()

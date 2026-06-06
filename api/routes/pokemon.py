@@ -1,4 +1,3 @@
-from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -7,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.auth import get_current_user, require_admin
 from api.database import get_db
 from api.models import History, Pokemon, User
+from api.timeutil import now_local
 
 router = APIRouter(prefix="/pokemon", tags=["pokemon"])
 
@@ -93,7 +93,7 @@ async def assign_pokemon(pokemon_id: int, user: User = Depends(get_current_user)
 
     previous = p.assigned_to
     p.assigned_to  = user.discord_id
-    p.assigned_at  = datetime.utcnow()
+    p.assigned_at  = now_local()
 
     action = "overridden" if previous and previous != user.discord_id else "assigned"
     db.add(History(
