@@ -28,7 +28,7 @@ export default function Remarcar() {
     <div className="max-w-4xl space-y-6">
       <h1 className="text-2xl font-bold">Remarcar Horário #{scheduleId}</h1>
       <p className="text-gray-400 text-sm">
-        Escolha um novo horário. Os outros 3 membros da party serão notificados automaticamente.
+        Escolha um novo horário. Os outros membros da PT serão notificados automaticamente.
       </p>
 
       {error && <p className="text-red-400 text-sm bg-red-900/30 px-3 py-2 rounded">{error}</p>}

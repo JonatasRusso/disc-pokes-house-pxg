@@ -4,7 +4,8 @@ CREATE TABLE IF NOT EXISTS users (
     username    TEXT NOT NULL,   -- username global do Discord
     nick        TEXT,            -- apelido no servidor (sincronizado pelo bot)
     avatar_url  TEXT,
-    is_admin    BOOLEAN NOT NULL DEFAULT FALSE
+    is_admin    BOOLEAN NOT NULL DEFAULT FALSE,
+    notify_lead_minutes INTEGER NOT NULL DEFAULT 30  -- 1º aviso N min antes da PT
 );
 
 -- Personagens de cada usuário (pode ter vários)
@@ -25,6 +26,7 @@ CREATE TABLE IF NOT EXISTS party_members (
     user_id      TEXT    NOT NULL REFERENCES users(discord_id) ON DELETE CASCADE,
     role         TEXT    NOT NULL CHECK(role IN ('DPS','SUP','TANK')),
     character_id INTEGER REFERENCES characters(id) ON DELETE SET NULL,  -- NULL = convidado sem personagem ainda
+    is_coleader  BOOLEAN NOT NULL DEFAULT FALSE,  -- co-líder pode gerenciar a PT
     PRIMARY KEY (party_id, user_id)
 );
 

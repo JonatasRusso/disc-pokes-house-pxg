@@ -4,6 +4,8 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import DeclarativeBase, relationship
 
+from api.timeutil import now_local
+
 
 class Base(DeclarativeBase):
     pass
@@ -17,6 +19,7 @@ class User(Base):
     nick       = Column(String)                    # apelido no servidor (sincronizado pelo bot)
     avatar_url = Column(String)
     is_admin   = Column(Boolean, nullable=False, default=False)
+    notify_lead_minutes = Column(Integer, nullable=False, default=30)  # 1º aviso N min antes da PT
 
     characters   = relationship("Character", back_populates="user", cascade="all, delete-orphan")
     memberships  = relationship("PartyMember", back_populates="user", cascade="all, delete-orphan")
@@ -56,6 +59,7 @@ class PartyMember(Base):
     user_id      = Column(String, ForeignKey("users.discord_id", ondelete="CASCADE"), primary_key=True)
     role         = Column(String, nullable=False)
     character_id = Column(Integer, ForeignKey("characters.id", ondelete="SET NULL"))  # NULL = convidado sem personagem ainda
+    is_coleader  = Column(Boolean, nullable=False, default=False)  # co-líder pode gerenciar a PT
 
     party     = relationship("Party", back_populates="members")
     user      = relationship("User", back_populates="memberships")
@@ -125,7 +129,7 @@ class History(Base):
     entity_id   = Column(Integer)
     action      = Column(String, nullable=False)
     detail      = Column(Text)
-    happened_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    happened_at = Column(DateTime, nullable=False, default=now_local)
 
     actor = relationship("User", back_populates="history")
 
@@ -138,5 +142,5 @@ class Outbox(Base):
     kind           = Column(String, nullable=False)   # ex: 'party_invite'
     target_user_id = Column(String, nullable=False)   # discord_id do destinatário
     payload        = Column(Text)                      # JSON com contexto
-    created_at     = Column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at     = Column(DateTime, nullable=False, default=now_local)
     sent_at        = Column(DateTime)                  # NULL = ainda não enviado

@@ -4,6 +4,8 @@ import Layout from "./components/Layout";
 import Login from "./pages/Login";
 import { Analytics } from "@vercel/analytics/react"
 import Dashboard from "./pages/Dashboard";
+import MinhasPTs from "./pages/MinhasPTs";
+import Calendario from "./pages/Calendario";
 import Agendar from "./pages/Agendar";
 import Remarcar from "./pages/Remarcar";
 import Perfil from "./pages/Perfil";
@@ -32,6 +34,8 @@ export default function App() {
       <Routes>
         <Route path="/" element={<Login />} />
         <Route path="/dashboard" element={<RequireAuth><Dashboard /></RequireAuth>} />
+        <Route path="/minhas-pts" element={<RequireAuth><MinhasPTs /></RequireAuth>} />
+        <Route path="/calendario" element={<RequireAuth><Calendario /></RequireAuth>} />
         <Route path="/agendar" element={<RequireAuth><Agendar /></RequireAuth>} />
         <Route path="/remarcar/:id" element={<RequireAuth><Remarcar /></RequireAuth>} />
         <Route path="/perfil" element={<RequireAuth><Perfil /></RequireAuth>} />

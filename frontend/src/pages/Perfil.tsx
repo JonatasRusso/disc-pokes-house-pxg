@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { getCharacters, createCharacter, updateCharacter, deleteCharacter, Character } from "../lib/api";
+import { getCharacters, createCharacter, updateCharacter, deleteCharacter, updateMySettings, Character } from "../lib/api";
 import { useAuth } from "../lib/useAuth";
 
 export default function Perfil() {
@@ -10,6 +10,15 @@ export default function Perfil() {
 
   const [newName, setNewName] = useState("");
   const [editing, setEditing] = useState<Character | null>(null);
+  const [lead, setLead] = useState<number>(user?.notify_lead_minutes ?? 30);
+  useEffect(() => {
+    if (user?.notify_lead_minutes) setLead(user.notify_lead_minutes);
+  }, [user?.notify_lead_minutes]);
+
+  const saveLead = useMutation({
+    mutationFn: () => updateMySettings(lead),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["me"] }),
+  });
 
   const create = useMutation({
     mutationFn: () => createCharacter({ name: newName }),
@@ -39,6 +48,31 @@ export default function Perfil() {
           {user?.is_admin && <span className="text-xs bg-brand px-2 py-0.5 rounded-full">Admin</span>}
         </div>
       </div>
+
+      {/* Notificações */}
+      <section className="bg-gray-900 rounded-lg p-4">
+        <h2 className="text-lg font-semibold mb-1">🔔 Notificações de PT</h2>
+        <p className="text-gray-500 text-xs mb-3">
+          Quanto tempo antes da PT você quer o <strong>primeiro</strong> aviso no Discord.
+          (Os avisos de 1 min, 30s e de atraso são automáticos.)
+        </p>
+        <div className="flex items-center gap-2">
+          <input
+            type="number" min={1} max={1440}
+            className="bg-gray-800 rounded px-3 py-2 text-sm w-24"
+            value={lead}
+            onChange={(e) => setLead(Number(e.target.value))}
+          />
+          <span className="text-sm text-gray-400">minutos antes</span>
+          <button
+            onClick={() => saveLead.mutate()}
+            disabled={saveLead.isPending}
+            className="ml-auto bg-brand hover:bg-brand-dark disabled:opacity-40 text-white text-sm px-4 py-2 rounded"
+          >
+            {saveLead.isPending ? "Salvando..." : saveLead.isSuccess ? "Salvo ✓" : "Salvar"}
+          </button>
+        </div>
+      </section>
 
       {/* Personagens */}
       <section>

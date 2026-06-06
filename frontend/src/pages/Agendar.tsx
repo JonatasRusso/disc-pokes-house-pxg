@@ -80,7 +80,7 @@ export default function Agendar() {
 
   return (
     <div className="max-w-4xl space-y-6">
-      <h1 className="text-2xl font-bold">Agendar Party</h1>
+      <h1 className="text-2xl font-bold">💀 Agendar PT</h1>
 
       {error && <p className="text-red-400 text-sm bg-red-900/30 px-3 py-2 rounded">{error}</p>}
 
