@@ -57,7 +57,8 @@ CREATE TABLE IF NOT EXISTS pokemon (
     image_url    TEXT,
     category     TEXT NOT NULL CHECK(category IN ('A','B','C')),
     assigned_to  TEXT REFERENCES users(discord_id) ON DELETE SET NULL,
-    assigned_at  TEXT   -- ISO-8601
+    assigned_at  TEXT,  -- ISO-8601
+    panel_message_id TEXT  -- id da mensagem do painel no Discord
 );
 
 -- Histórico geral de eventos (agendamentos, pokémons, remarcações)

@@ -111,6 +111,7 @@ class Pokemon(Base):
     category    = Column(String, nullable=False)
     assigned_to = Column(String, ForeignKey("users.discord_id", ondelete="SET NULL"))
     assigned_at = Column(DateTime)
+    panel_message_id = Column(String)  # id da mensagem do painel no Discord (liga reação -> pokémon)
 
     assigned_user = relationship("User", back_populates="pokemon_use")
 
