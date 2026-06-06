@@ -1,5 +1,6 @@
 import os
 from fastapi import APIRouter, Depends, HTTPException, Response
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.auth import create_token, exchange_code, get_current_user, get_discord_user
@@ -58,11 +59,28 @@ async def logout(response: Response):
     return {"ok": True}
 
 
-@router.get("/me")
-async def me(user: User = Depends(get_current_user)):
+def _user_dict(user: User) -> dict:
     return {
         "discord_id": user.discord_id,
         "username":   user.username,
         "avatar_url": user.avatar_url,
         "is_admin":   user.is_admin,
+        "notify_lead_minutes": user.notify_lead_minutes or 30,
     }
+
+
+@router.get("/me")
+async def me(user: User = Depends(get_current_user)):
+    return _user_dict(user)
+
+
+class SettingsIn(BaseModel):
+    notify_lead_minutes: int
+
+
+@router.patch("/me")
+async def update_me(body: SettingsIn, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    # Limita entre 1 min e 24h
+    user.notify_lead_minutes = max(1, min(body.notify_lead_minutes, 1440))
+    await db.commit()
+    return _user_dict(user)

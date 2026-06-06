@@ -89,10 +89,11 @@ async def _party_members_map(db: AsyncSession, party_ids: list[int]) -> dict[int
     role_order = {"TANK": 0, "SUP": 1, "DPS": 2}
     for pm, u, ch in rows.all():
         out.setdefault(pm.party_id, []).append({
-            "discord_id": u.discord_id,
-            "nick":       u.nick or u.username,
-            "role":       pm.role,
-            "character":  ch.name if ch else None,
+            "discord_id":  u.discord_id,
+            "nick":        u.nick or u.username,
+            "role":        pm.role,
+            "character":   ch.name if ch else None,
+            "is_coleader": bool(pm.is_coleader),
         })
     for members in out.values():
         members.sort(key=lambda m: role_order.get(m["role"], 9))
@@ -131,9 +132,17 @@ async def list_schedules(user: User = Depends(get_current_user), db: AsyncSessio
             {**m, "confirmed": conf_map.get((s.id, m["discord_id"]), False)}
             for m in mmap.get(s.party_id, [])
         ]
-        out.append({**_schedule_dict(s), "members": members, "is_member": any(
-            m["discord_id"] == user.discord_id for m in members
-        )})
+        me = next((m for m in members if m["discord_id"] == user.discord_id), None)
+        is_leader = s.organizer_id == user.discord_id
+        can_manage = bool(user.is_admin or is_leader or (me and me["is_coleader"]))
+        out.append({
+            **_schedule_dict(s),
+            "members":      members,
+            "is_member":    me is not None,
+            "is_leader":    is_leader,
+            "can_manage":   can_manage,
+            "organizer_id": s.organizer_id,
+        })
     return out
 
 
@@ -293,15 +302,9 @@ async def reschedule(schedule_id: int, body: RescheduleIn, user: User = Depends(
     if not schedule:
         raise HTTPException(404, "Horário não encontrado")
 
-    # Membro da party OU admin podem remarcar
-    member = await db.execute(
-        select(PartyMember).where(
-            PartyMember.party_id == schedule.party_id,
-            PartyMember.user_id == user.discord_id,
-        )
-    )
-    if not member.scalar_one_or_none() and not user.is_admin:
-        raise HTTPException(403, "Você não é membro desta party")
+    # Líder, co-líder ou admin podem remarcar
+    if not await _can_manage(db, schedule, user):
+        raise HTTPException(403, "Apenas líder/co-líder podem remarcar a PT.")
 
     new_start = next_occurrence(body.new_start.weekday(), body.new_start.hour, datetime.utcnow())
     # Evita conflito com outras PTs (ignora a própria)
@@ -340,6 +343,67 @@ async def _my_membership(db: AsyncSession, schedule: Schedule, user_id: str) -> 
         )
     )
     return res.scalar_one_or_none()
+
+
+async def _can_manage(db: AsyncSession, schedule: Schedule, user: User) -> bool:
+    """Pode gerenciar quem é: admin, organizador (líder) ou co-líder."""
+    if user.is_admin or schedule.organizer_id == user.discord_id:
+        return True
+    pm = await _my_membership(db, schedule, user.discord_id)
+    return bool(pm and pm.is_coleader)
+
+
+class PromoteIn(BaseModel):
+    user_id: str
+    coleader: bool = True
+
+
+@router.post("/{schedule_id}/promote")
+async def promote_member(schedule_id: int, body: PromoteIn, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Líder/organizador (ou admin) promove/rebaixa um membro a co-líder."""
+    schedule = await db.get(Schedule, schedule_id)
+    if not schedule:
+        raise HTTPException(404, "Horário não encontrado")
+    if not (user.is_admin or schedule.organizer_id == user.discord_id):
+        raise HTTPException(403, "Apenas o líder da PT pode definir co-líderes.")
+
+    pm = await _my_membership(db, schedule, body.user_id)
+    if not pm:
+        raise HTTPException(404, "Membro não está na PT")
+    pm.is_coleader = body.coleader
+    db.add(History(actor_id=user.discord_id, entity_type="schedule", entity_id=schedule_id,
+                   action="coleader_set", detail=f'{{"member":"{body.user_id}","coleader":{str(body.coleader).lower()}}}'))
+    await db.commit()
+    return {"ok": True}
+
+
+@router.post("/{schedule_id}/kick")
+async def kick_member(schedule_id: int, body: PromoteIn, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Líder/co-líder/admin remove um membro da PT."""
+    schedule = await db.get(Schedule, schedule_id)
+    if not schedule:
+        raise HTTPException(404, "Horário não encontrado")
+    if not await _can_manage(db, schedule, user):
+        raise HTTPException(403, "Sem permissão para gerenciar esta PT.")
+    if body.user_id == schedule.organizer_id:
+        raise HTTPException(400, "Não é possível remover o líder.")
+
+    pm = await _my_membership(db, schedule, body.user_id)
+    if not pm:
+        raise HTTPException(404, "Membro não está na PT")
+    await db.delete(pm)
+    conf = await db.execute(select(ScheduleConfirmation).where(
+        ScheduleConfirmation.schedule_id == schedule_id, ScheduleConfirmation.user_id == body.user_id))
+    conf = conf.scalar_one_or_none()
+    if conf:
+        await db.delete(conf)
+    db.add(History(actor_id=user.discord_id, entity_type="schedule", entity_id=schedule_id, action="kicked",
+                   detail=f'{{"member":"{body.user_id}"}}'))
+    db.add(Outbox(kind="party_left", target_user_id=body.user_id, payload=json.dumps({
+        "who": "A liderança", "schedule_id": schedule_id, "kicked": True,
+    })))
+    await db.commit()
+    return {"ok": True}
 
 
 @router.post("/{schedule_id}/confirm")
@@ -442,14 +506,8 @@ async def cancel_schedule(schedule_id: int, user: User = Depends(get_current_use
     if not schedule:
         raise HTTPException(404, "Horário não encontrado")
 
-    member = await db.execute(
-        select(PartyMember).where(
-            PartyMember.party_id == schedule.party_id,
-            PartyMember.user_id == user.discord_id,
-        )
-    )
-    if not member.scalar_one_or_none() and not user.is_admin:
-        raise HTTPException(403, "Sem permissão")
+    if not await _can_manage(db, schedule, user):
+        raise HTTPException(403, "Apenas líder/co-líder podem cancelar a PT.")
 
     schedule.status = "cancelled"
     db.add(History(actor_id=user.discord_id, entity_type="schedule", entity_id=schedule_id, action="cancelled"))

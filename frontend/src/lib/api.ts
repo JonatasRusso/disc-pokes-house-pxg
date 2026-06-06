@@ -15,6 +15,8 @@ async function req<T>(path: string, options: RequestInit = {}): Promise<T> {
 
 // --- Auth ---
 export const getMe = () => req<User>("/auth/me");
+export const updateMySettings = (notify_lead_minutes: number) =>
+  req<User>("/auth/me", { method: "PATCH", body: JSON.stringify({ notify_lead_minutes }) });
 
 // --- Characters ---
 export const getCharacters = () => req<Character[]>("/characters");
@@ -44,6 +46,10 @@ export const leaveParty = (id: number) =>
   req<{ ok: boolean; cancelled: boolean }>(`/schedules/${id}/leave`, { method: "POST" });
 export const setMyCharacter = (id: number, character_id: number) =>
   req<{ ok: boolean }>(`/schedules/${id}/my-character`, { method: "PATCH", body: JSON.stringify({ character_id }) });
+export const promoteColeader = (id: number, user_id: string, coleader: boolean) =>
+  req<{ ok: boolean }>(`/schedules/${id}/promote`, { method: "POST", body: JSON.stringify({ user_id, coleader }) });
+export const kickMember = (id: number, user_id: string) =>
+  req<{ ok: boolean }>(`/schedules/${id}/kick`, { method: "POST", body: JSON.stringify({ user_id }) });
 
 // --- Pokémon ---
 export const getPokemon = () => req<Pokemon[]>("/pokemon");
@@ -74,6 +80,7 @@ export interface User {
   username: string;
   avatar_url: string | null;
   is_admin: boolean;
+  notify_lead_minutes?: number;
 }
 
 export interface Character {
@@ -100,6 +107,8 @@ export interface Schedule {
   status: "pending" | "confirmed" | "rescheduled" | "missed" | "cancelled";
   members: ScheduleMember[];
   is_member: boolean;
+  is_leader?: boolean;
+  can_manage?: boolean;
 }
 
 export interface ScheduleMember {
@@ -108,6 +117,7 @@ export interface ScheduleMember {
   role: "DPS" | "SUP" | "TANK";
   character: string | null;
   confirmed?: boolean;
+  is_coleader?: boolean;
 }
 
 export interface CalendarParty {

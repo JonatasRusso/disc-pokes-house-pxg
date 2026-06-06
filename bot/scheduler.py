@@ -18,8 +18,9 @@ from bot.config import DISCORD_NOTIFY_CHANNEL_ID, POKEMON_CHANNELS, SITE_URL
 
 log = logging.getLogger(__name__)
 
-# schedule_id -> message_id da mensagem de notificação no Discord
-_active_pings: dict[int, int] = {}
+# (schedule_id, user_id) -> estado do aviso da ocorrência atual
+# {"iso": str, "msg_id": int|None, "sent": set[str], "last_late": datetime|None}
+_warn_state: dict[tuple[int, str], dict] = {}
 
 # schedule_id -> start_time iso já lembrado (evita repetir o lembrete de pokémon na mesma ocorrência)
 _poke_reminded: dict[int, str] = {}
@@ -30,11 +31,22 @@ CAT_LABEL    = {"A": "Tank", "B": "DPS", "C": "Sup"}
 
 def start_scheduler(bot: discord.Client):
     scheduler = AsyncIOScheduler()
-    scheduler.add_job(_check_schedules, "interval", minutes=1, args=[bot])
+    scheduler.add_job(_check_schedules, "interval", seconds=20, args=[bot])
     scheduler.add_job(_process_outbox, "interval", seconds=20, args=[bot])
     scheduler.start()
     log.info("Scheduler iniciado.")
     return scheduler
+
+
+async def _delete_warn(channel: discord.TextChannel, key: tuple[int, str]):
+    """Apaga a mensagem de aviso atual (avisar e deletar)."""
+    st = _warn_state.get(key)
+    if st and st.get("msg_id"):
+        try:
+            await channel.get_partial_message(st["msg_id"]).delete()
+        except Exception:
+            pass
+        st["msg_id"] = None
 
 
 OUTBOX_GIVEUP = timedelta(minutes=15)  # abandona item que não envia há 15 min (ex: bot sem permissão)
@@ -93,7 +105,7 @@ async def _send_party_invite(channel: discord.TextChannel, item: Outbox):
         desc += "\n\n⚠️ Você ainda não tem um personagem cadastrado — crie um no site para entrar na PT."
 
     embed = discord.Embed(
-        title="🎉 Convite de Party",
+        title="💀 Convite de PT",
         description=desc,
         color=discord.Color.blurple(),
     )
@@ -109,7 +121,7 @@ async def _send_party_left(channel: discord.TextChannel, item: Outbox):
     who = data.get("who", "Alguém")
     sid = data.get("schedule_id")
     embed = discord.Embed(
-        title="🚪 Saída de Party",
+        title="🚪 Saída de PT",
         description=f"<@{item.target_user_id}>, **{who}** saiu da sua PT (#{sid}). "
                     "Talvez seja preciso chamar outra pessoa.",
         color=discord.Color.orange(),
@@ -153,56 +165,92 @@ async def _rollover_recurring():
 async def _check_schedules(bot: discord.Client):
     await _rollover_recurring()
 
-    now     = datetime.now(timezone.utc)
-    soon    = now + timedelta(minutes=30)
-
+    now = datetime.utcnow()
     channel = bot.get_channel(DISCORD_NOTIFY_CHANNEL_ID)
     if not channel:
-        log.warning("Canal de notificações não encontrado.")
         return
 
     async with AsyncSessionLocal() as db:
+        # Schedules ativos que começam em até 24h ou começaram há até 30 min
         result = await db.execute(
             select(Schedule).where(
-                Schedule.status.in_(["pending", "confirmed"]),
-                Schedule.start_time <= soon.replace(tzinfo=None),
-                Schedule.start_time >= now.replace(tzinfo=None),
+                Schedule.status.in_(["pending", "confirmed", "rescheduled"]),
+                Schedule.start_time <= now + timedelta(hours=24),
+                Schedule.start_time >= now - timedelta(minutes=30),
             )
         )
         schedules = result.scalars().all()
 
         for schedule in schedules:
-            members_result = await db.execute(
+            members = (await db.execute(
                 select(PartyMember).where(PartyMember.party_id == schedule.party_id)
-            )
-            members = members_result.scalars().all()
+            )).scalars().all()
 
-            # Lembrete de pokémons da PT (uma vez por ocorrência)
-            await _pokemon_pt_reminder(bot, db, schedule, members)
+            sched_secs = (schedule.start_time - now).total_seconds()
+            iso = schedule.start_time.isoformat()
+
+            # Lembrete de pokémons quando entra na janela de 30 min
+            if 0 <= sched_secs <= 30 * 60:
+                await _pokemon_pt_reminder(bot, db, schedule, members)
 
             for member in members:
-                conf_result = await db.execute(
+                key = (schedule.id, member.user_id)
+                st = _warn_state.get(key)
+                # Ocorrência mudou (rollover/remarcação): limpa
+                if st and st.get("iso") != iso:
+                    await _delete_warn(channel, key)
+                    _warn_state.pop(key, None)
+                    st = None
+
+                conf = (await db.execute(
                     select(ScheduleConfirmation).where(
                         ScheduleConfirmation.schedule_id == schedule.id,
                         ScheduleConfirmation.user_id == member.user_id,
                     )
-                )
-                conf = conf_result.scalar_one_or_none()
-
-                if conf and conf.confirmed:
-                    continue  # já confirmou
-
-                # Cria confirmação se ainda não existe
+                )).scalar_one_or_none()
                 if not conf:
-                    conf = ScheduleConfirmation(
-                        schedule_id=schedule.id,
-                        user_id=member.user_id,
-                        confirmed=False,
-                    )
+                    conf = ScheduleConfirmation(schedule_id=schedule.id, user_id=member.user_id, confirmed=False)
                     db.add(conf)
 
-                conf.last_ping = datetime.utcnow()
-                await _send_ping(bot, channel, schedule, member.user_id, member.role)
+                # Confirmou: apaga o aviso e encerra
+                if conf.confirmed:
+                    if st:
+                        await _delete_warn(channel, key)
+                        _warn_state.pop(key, None)
+                    continue
+
+                u = await db.get(User, member.user_id)
+                lead = (u.notify_lead_minutes if (u and u.notify_lead_minutes) else 30)
+
+                # Fora da janela de aviso?
+                if sched_secs > lead * 60 or sched_secs < -30 * 60:
+                    continue
+
+                if st is None:
+                    st = {"iso": iso, "msg_id": None, "sent": set(), "last_late": None}
+                    _warn_state[key] = st
+
+                # Decide qual aviso disparar
+                milestone = None
+                if sched_secs <= 0:
+                    if st["last_late"] is None or (now - st["last_late"]).total_seconds() >= 30:
+                        milestone = "late"
+                elif sched_secs <= 30 and "30s" not in st["sent"]:
+                    milestone = "30s"
+                elif sched_secs <= 60 and "1min" not in st["sent"]:
+                    milestone = "1min"
+                elif sched_secs <= lead * 60 and "first" not in st["sent"]:
+                    milestone = "first"
+
+                if milestone:
+                    await _delete_warn(channel, key)
+                    msg = await _send_warning(channel, schedule, member, milestone, sched_secs)
+                    st["msg_id"] = msg.id if msg else None
+                    if milestone == "late":
+                        st["last_late"] = now
+                    else:
+                        st["sent"].add(milestone)
+                conf.last_ping = now
 
         await db.commit()
 
@@ -247,35 +295,40 @@ async def _pokemon_pt_reminder(bot: discord.Client, db, schedule: Schedule, memb
         _poke_reminded[schedule.id] = iso
 
 
-async def _send_ping(
-    bot: discord.Client,
-    channel: discord.TextChannel,
-    schedule: Schedule,
-    user_id: str,
-    role: str,
-):
+async def _send_warning(channel: discord.TextChannel, schedule: Schedule, member, milestone: str, secs: float):
     guild = channel.guild
-    member = guild.get_member(int(user_id))
-    if not member:
-        return
+    mem = guild.get_member(int(member.user_id))
+    if not mem:
+        return None
 
-    minutes_left = int((schedule.start_time - datetime.utcnow()).total_seconds() / 60)
+    if milestone == "first":
+        mins = max(1, int(secs / 60))
+        title, when = "⏰ Sua PT está chegando", f"em **{mins} min**"
+        color = discord.Color.orange()
+    elif milestone == "1min":
+        title, when, color = "⏰ Falta 1 minuto!", "em **1 minuto**", discord.Color.orange()
+    elif milestone == "30s":
+        title, when, color = "⏰ Faltam 30 segundos!", "em **30 segundos**", discord.Color.gold()
+    else:  # late
+        late_min = int((-secs) / 60)
+        title = "🚨 A PT já começou — cadê você?"
+        when = f"há **{late_min} min**" if late_min else "**agora**"
+        color = discord.Color.red()
 
     embed = discord.Embed(
-        title="⏰ Confirmação de Party",
+        title=title,
         description=(
-            f"{member.mention}, sua party começa em **{minutes_left} minutos**!\n\n"
-            f"🎮 Dificuldade: `{schedule.difficulty}` | Função: `{role}`\n"
-            f"🕐 Horário: `{schedule.start_time.strftime('%d/%m %H:%M')}` → `{schedule.end_time.strftime('%H:%M')}`\n\n"
-            f"Reaja com ✅ para confirmar ou acesse o site para remarcar:\n"
-            f"[Remarcar horário #{schedule.id}]({SITE_URL}/remarcar/{schedule.id})"
+            f"{mem.mention}, a PT 💀 **{schedule.difficulty}** (`{member.role}`) começa {when}.\n"
+            f"Reaja ✅ para confirmar."
         ),
-        color=discord.Color.orange(),
+        color=color,
     )
-    embed.set_footer(text=f"schedule_id:{schedule.id}|user_id:{user_id}")
-
-    msg = await channel.send(embed=embed)
+    embed.set_footer(text=f"schedule_id:{schedule.id}|user_id:{member.user_id}")
+    msg = await channel.send(
+        content=mem.mention, embed=embed, allowed_mentions=discord.AllowedMentions(users=True)
+    )
     await msg.add_reaction("✅")
+    return msg
 
 
 async def handle_confirmation(bot: discord.Client, payload: discord.RawReactionActionEvent):
@@ -322,9 +375,9 @@ async def handle_confirmation(bot: discord.Client, payload: discord.RawReactionA
             conf.confirmed = True
             await db.commit()
 
-    # Edita a mensagem para indicar confirmação
-    if message.embeds:
-        embed = message.embeds[0].copy()
-        embed.color = discord.Color.green()
-        embed.title = "✅ Confirmado!"
-        await message.edit(embed=embed)
+    # Avisar e deletar: apaga a mensagem ao confirmar e limpa o estado
+    _warn_state.pop((schedule_id, expected_user_id), None)
+    try:
+        await message.delete()
+    except Exception:
+        pass

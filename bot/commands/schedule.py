@@ -11,7 +11,7 @@ class ScheduleCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
-    @app_commands.command(name="agendar", description="Abrir formulário para agendar um horário de party")
+    @app_commands.command(name="agendar", description="Abrir formulário para agendar uma PT")
     async def agendar(self, interaction: discord.Interaction):
         url = f"{SITE_URL}/agendar"
         embed = discord.Embed(
@@ -61,7 +61,7 @@ class ScheduleCog(commands.Cog):
             description=(
                 f"Clique no link para escolher um novo horário no site:\n\n"
                 f"**[Remarcar horário #{id}]({url})**\n\n"
-                "Os outros membros da party serão notificados automaticamente."
+                "Os outros membros da PT serão notificados automaticamente."
             ),
             color=discord.Color.orange(),
         )
