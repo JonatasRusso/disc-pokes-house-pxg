@@ -30,11 +30,21 @@ async def my_pokemon(user: User = Depends(get_current_user), db: AsyncSession = 
     return [_poke_dict(p) for p in result.scalars().all()]
 
 
+def _clean_image_url(url: str | None) -> str | None:
+    """Aceita apenas URL http(s) válida e dentro do limite do Discord (2048)."""
+    if not url:
+        return None
+    url = url.strip()
+    if url.startswith(("http://", "https://")) and len(url) <= 2048 and " " not in url:
+        return url
+    return None
+
+
 @router.post("")
 async def create_pokemon(body: PokemonIn, admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
     if body.category not in ("A", "B", "C"):
         raise HTTPException(400, "Categoria inválida. Use A, B ou C.")
-    p = Pokemon(name=body.name, image_url=body.image_url, category=body.category)
+    p = Pokemon(name=body.name.strip(), image_url=_clean_image_url(body.image_url), category=body.category)
     db.add(p)
     await db.commit()
     await db.refresh(p)
