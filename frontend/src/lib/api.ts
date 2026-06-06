@@ -44,6 +44,10 @@ export const getPokemon = () => req<Pokemon[]>("/pokemon");
 export const getMyPokemon = () => req<Pokemon[]>("/pokemon/my");
 export const createPokemon = (body: { name: string; image_url?: string; category: string }) =>
   req<Pokemon>("/pokemon", { method: "POST", body: JSON.stringify(body) });
+export const updatePokemon = (id: number, body: { name?: string; image_url?: string; category?: string }) =>
+  req<Pokemon>(`/pokemon/${id}`, { method: "PATCH", body: JSON.stringify(body) });
+export const deletePokemon = (id: number) =>
+  req<{ ok: boolean }>(`/pokemon/${id}`, { method: "DELETE" });
 export const assignPokemon = (id: number) =>
   req<Pokemon>(`/pokemon/${id}/assign`, { method: "PATCH" });
 export const unassignPokemon = (id: number) =>

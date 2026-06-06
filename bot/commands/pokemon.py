@@ -29,7 +29,7 @@ def build_pokemon_embed(pokemon: Pokemon, guild: discord.Guild | None) -> discor
                     f"Reaja 🎯 para marcar · remova a reação para liberar",
         color=color,
     )
-    embed.set_footer(text=f"ID: {pokemon.id} | Categoria: {pokemon.category}")
+    embed.set_footer(text=f"ID: {pokemon.id}")
     url = (pokemon.image_url or "").strip()
     if url.startswith(("http://", "https://")) and len(url) <= 2048 and " " not in url:
         embed.set_thumbnail(url=url)

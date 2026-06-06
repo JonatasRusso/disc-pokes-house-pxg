@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { getPokemon, createPokemon, unassignPokemon, Pokemon } from "../lib/api";
+import { getPokemon, createPokemon, updatePokemon, deletePokemon, unassignPokemon, Pokemon } from "../lib/api";
 
 const CATEGORIES = ["A", "B", "C"] as const;
 const CATEGORY_LABEL: Record<string, string> = {
@@ -17,19 +17,31 @@ export default function AdminPokemon() {
   const [imageUrl, setImage]  = useState("");
   const [category, setCat]    = useState<string>("A");
   const [error, setError]     = useState("");
+  const [editingId, setEditingId] = useState<number | null>(null);
+
+  const refresh = () => qc.invalidateQueries({ queryKey: ["pokemon"] });
 
   const create = useMutation({
     mutationFn: () => createPokemon({ name, image_url: imageUrl || undefined, category }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["pokemon"] });
-      setName(""); setImage("");
-    },
+    onSuccess: () => { refresh(); setName(""); setImage(""); },
     onError: (e: Error) => setError(e.message),
+  });
+
+  const update = useMutation({
+    mutationFn: (vars: { id: number; name: string; image_url: string; category: string }) =>
+      updatePokemon(vars.id, { name: vars.name, image_url: vars.image_url, category: vars.category }),
+    onSuccess: () => { refresh(); setEditingId(null); },
+    onError: (e: Error) => setError(e.message),
+  });
+
+  const remove = useMutation({
+    mutationFn: deletePokemon,
+    onSuccess: refresh,
   });
 
   const unassign = useMutation({
     mutationFn: unassignPokemon,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["pokemon"] }),
+    onSuccess: refresh,
   });
 
   return (
@@ -94,7 +106,16 @@ export default function AdminPokemon() {
               </h2>
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
                 {group.map((p) => (
-                  <PokemonCard key={p.id} pokemon={p} onUnassign={() => unassign.mutate(p.id)} />
+                  <PokemonCard
+                    key={`${p.id}-${editingId === p.id ? "edit" : "view"}`}
+                    pokemon={p}
+                    editing={editingId === p.id}
+                    onEdit={() => setEditingId(p.id)}
+                    onCancel={() => setEditingId(null)}
+                    onSave={(vars) => update.mutate({ id: p.id, ...vars })}
+                    onDelete={() => { if (confirm(`Excluir ${p.name}?`)) remove.mutate(p.id); }}
+                    onUnassign={() => unassign.mutate(p.id)}
+                  />
                 ))}
               </div>
             </section>
@@ -105,7 +126,55 @@ export default function AdminPokemon() {
   );
 }
 
-function PokemonCard({ pokemon: p, onUnassign }: { pokemon: Pokemon; onUnassign: () => void }) {
+function PokemonCard({
+  pokemon: p, editing, onEdit, onCancel, onSave, onDelete, onUnassign,
+}: {
+  pokemon: Pokemon;
+  editing: boolean;
+  onEdit: () => void;
+  onCancel: () => void;
+  onSave: (vars: { name: string; image_url: string; category: string }) => void;
+  onDelete: () => void;
+  onUnassign: () => void;
+}) {
+  const [name, setName] = useState(p.name);
+  const [img, setImg]   = useState(p.image_url ?? "");
+  const [cat, setCat]   = useState<string>(p.category);
+
+  if (editing) {
+    return (
+      <div className="bg-gray-900 rounded-lg p-3 flex flex-col gap-2 border border-brand">
+        <input
+          className="bg-gray-800 rounded px-2 py-1 text-sm"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Nome"
+        />
+        <input
+          className="bg-gray-800 rounded px-2 py-1 text-xs"
+          value={img}
+          onChange={(e) => setImg(e.target.value)}
+          placeholder="URL da imagem"
+        />
+        <div className="flex gap-1">
+          {CATEGORIES.map((c) => (
+            <button
+              key={c}
+              onClick={() => setCat(c)}
+              className={`flex-1 py-1 rounded text-xs ${cat === c ? "bg-brand text-white" : "bg-gray-800 text-gray-300"}`}
+            >
+              {CATEGORY_LABEL[c]}
+            </button>
+          ))}
+        </div>
+        <div className="flex justify-between text-xs">
+          <button onClick={() => onSave({ name, image_url: img, category: cat })} className="text-green-400 hover:underline">Salvar</button>
+          <button onClick={onCancel} className="text-gray-500 hover:underline">Cancelar</button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={`bg-gray-900 rounded-lg p-3 flex flex-col gap-2 border ${p.assigned_to ? "border-green-700" : "border-gray-800"}`}>
       {p.image_url ? (
@@ -123,6 +192,10 @@ function PokemonCard({ pokemon: p, onUnassign }: { pokemon: Pokemon; onUnassign:
         ) : (
           <p className="text-gray-500">Livre</p>
         )}
+      </div>
+      <div className="flex justify-between text-xs pt-1 border-t border-gray-800">
+        <button onClick={onEdit} className="text-brand hover:underline">Editar</button>
+        <button onClick={onDelete} className="text-red-500 hover:underline">Excluir</button>
       </div>
     </div>
   );
