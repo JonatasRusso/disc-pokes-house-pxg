@@ -63,6 +63,10 @@ async def _delete_warn(channel: discord.TextChannel, key: tuple[int, str]):
 
 OUTBOX_GIVEUP = timedelta(minutes=15)  # abandona item que não envia há 15 min (ex: bot sem permissão)
 
+# TTL de mensagens transitórias do bot (auto-apagam para não poluir os canais)
+NOTICE_TTL_S        = 30 * 60   # convites / saída / remarcação
+POKE_REMINDER_TTL_S = 40 * 60   # lembrete de pokémon (posta ~30 min antes; some no início da PT)
+
 
 async def _process_outbox(bot: discord.Client):
     """Envia mensagens enfileiradas pela API (convites de PT, etc)."""
@@ -127,6 +131,7 @@ async def _send_party_invite(channel: discord.TextChannel, item: Outbox):
         content=f"<@{item.target_user_id}>",
         embed=embed,
         allowed_mentions=discord.AllowedMentions(users=True),
+        delete_after=NOTICE_TTL_S,
     )
 
 
@@ -144,6 +149,7 @@ async def _send_party_left(channel: discord.TextChannel, item: Outbox):
         content=f"<@{item.target_user_id}>",
         embed=embed,
         allowed_mentions=discord.AllowedMentions(users=True),
+        delete_after=NOTICE_TTL_S,
     )
 
 
@@ -183,6 +189,7 @@ async def _send_party_rescheduled(channel: discord.TextChannel, item: Outbox):
         content=f"<@{item.target_user_id}>",
         embed=embed,
         allowed_mentions=discord.AllowedMentions(users=True),
+        delete_after=NOTICE_TTL_S,
     )
 
 
@@ -332,8 +339,9 @@ async def _check_schedules(bot: discord.Client):
 
         await db.commit()
 
-    # Limpa estado de avisos de PTs que saíram da janela (evita acúmulo em memória)
+    # PTs que saíram da janela: apaga o aviso que sobrou no canal e limpa o estado
     for k in [k for k in _warn_state if k not in seen_keys]:
+        await _delete_warn(channel, k)
         _warn_state.pop(k, None)
 
 
@@ -371,6 +379,7 @@ async def _pokemon_pt_reminder(bot: discord.Client, db, schedule: Schedule, memb
             content=mentions,
             embed=embed,
             allowed_mentions=discord.AllowedMentions(users=True),
+            delete_after=POKE_REMINDER_TTL_S,
         )
         sent_any = True
 
