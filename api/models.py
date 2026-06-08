@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta
 from sqlalchemy import (
-    Boolean, Column, DateTime, ForeignKey, Integer, String, Text, CheckConstraint
+    Boolean, Column, DateTime, Float, ForeignKey, Integer, String, Text, CheckConstraint
 )
 from sqlalchemy.orm import DeclarativeBase, relationship
 
@@ -144,3 +144,16 @@ class Outbox(Base):
     payload        = Column(Text)                      # JSON com contexto
     created_at     = Column(DateTime, nullable=False, default=now_local)
     sent_at        = Column(DateTime)                  # NULL = ainda não enviado
+
+
+class BotHeartbeat(Base):
+    """Estado do bot gravado periodicamente (processos separados) para o /health da API ler."""
+    __tablename__ = "bot_heartbeat"
+
+    id              = Column(Integer, primary_key=True)  # sempre 1
+    is_ready        = Column(Boolean, default=False)
+    latency_ms      = Column(Integer)
+    guilds          = Column(Integer)
+    memory_mb       = Column(Float)
+    last_command_at = Column(DateTime)
+    updated_at      = Column(DateTime)

@@ -31,9 +31,11 @@ CAT_LABEL    = {"A": "Tank", "B": "DPS", "C": "Sup"}
 
 
 def start_scheduler(bot: discord.Client):
+    from bot.health import write_heartbeat
     scheduler = AsyncIOScheduler()
     scheduler.add_job(_check_schedules, "interval", seconds=20, args=[bot])
     scheduler.add_job(_process_outbox, "interval", seconds=20, args=[bot])
+    scheduler.add_job(write_heartbeat, "interval", seconds=30, args=[bot])
     scheduler.start()
     log.info("Scheduler iniciado.")
     return scheduler
