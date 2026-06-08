@@ -10,6 +10,7 @@ from sqlalchemy import select
 
 from bot.config import DISCORD_TOKEN, DISCORD_GUILD_ID
 from bot.scheduler import start_scheduler, handle_confirmation
+from bot.health import write_heartbeat, mark_command
 from api.database import init_db, AsyncSessionLocal
 from api.models import User
 
@@ -70,6 +71,12 @@ async def on_ready():
     log.info(f"{len(synced)} comandos slash sincronizados.")
     await sync_roster()
     start_scheduler(bot)
+    await write_heartbeat(bot)  # heartbeat inicial
+
+
+@bot.event
+async def on_app_command_completion(interaction, command):
+    mark_command()
 
 
 @bot.event
@@ -81,6 +88,7 @@ async def on_member_join(member: discord.Member):
 
 @bot.event
 async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
+    mark_command()
     # Delega confirmações de schedule ao scheduler
     await handle_confirmation(bot, payload)
     # As reações de pokémon são tratadas pelo ReactionCog
