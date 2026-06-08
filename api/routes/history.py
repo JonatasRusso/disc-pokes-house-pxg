@@ -38,6 +38,9 @@ def _summary(h: History, d: dict, name, poke_name) -> str:
             return f"{a} editou a PT #{h.entity_id}"
         if h.action == "member_added":
             return f"{a} adicionou {name(d.get('member'))} ({d.get('role', '')}) na PT #{h.entity_id}"
+        if h.action == "member_external":
+            estado = "externo" if d.get("external") else "normal"
+            return f"{a} marcou {name(d.get('member'))} como {estado} na PT #{h.entity_id}"
     return f"{a} — {h.action}"
 
 

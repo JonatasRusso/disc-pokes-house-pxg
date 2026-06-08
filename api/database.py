@@ -23,6 +23,8 @@ _MIGRATIONS = [
     "ALTER TABLE party_members ADD COLUMN IF NOT EXISTS is_coleader BOOLEAN DEFAULT FALSE",
     "ALTER TABLE schedules ADD COLUMN IF NOT EXISTS override_start TIMESTAMP",  # remarcação só desta semana
     "ALTER TABLE schedules ADD COLUMN IF NOT EXISTS override_end TIMESTAMP",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_external BOOLEAN DEFAULT FALSE",  # convidado de outro servidor
+    "ALTER TABLE party_members ADD COLUMN IF NOT EXISTS is_external BOOLEAN DEFAULT FALSE",  # membro externo nesta PT (sem pokémon)
 ]
 
 

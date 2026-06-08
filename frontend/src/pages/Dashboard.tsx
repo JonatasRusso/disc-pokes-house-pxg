@@ -38,7 +38,8 @@ export default function Dashboard() {
         ) : (
           <div className="grid gap-2">
             {upcoming.map((s) => {
-              const confirmed = s.members.filter((m) => m.confirmed).length;
+              const realMembers = s.members.filter((m) => !m.is_guest);  // convidados não confirmam
+              const confirmed = realMembers.filter((m) => m.confirmed).length;
               return (
                 <Link key={s.id} to="/minhas-pts" className="bg-gray-900 hover:bg-gray-800 transition-colors rounded-lg p-3 flex items-center gap-3">
                   <span className={`text-xs px-2 py-0.5 rounded-full text-white font-medium ${STATUS_COLOR[s.status]}`}>{s.status}</span>
@@ -50,7 +51,7 @@ export default function Dashboard() {
                     <span className="text-amber-400 text-xs" title="Remarcada só esta semana">📌 esta semana</span>
                   )}
                   <span className="ml-auto text-xs text-gray-500">
-                    {confirmed}/{s.members.length} confirmados
+                    {confirmed}/{realMembers.length} confirmados
                   </span>
                 </Link>
               );

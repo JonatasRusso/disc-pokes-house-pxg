@@ -19,6 +19,7 @@ class User(Base):
     nick       = Column(String)                    # apelido no servidor (sincronizado pelo bot)
     avatar_url = Column(String)
     is_admin   = Column(Boolean, nullable=False, default=False)
+    is_external = Column(Boolean, nullable=False, default=False)  # convidado de outro servidor: ocupa vaga, mas não usa pokémon nem recebe ping
     notify_lead_minutes = Column(Integer, nullable=False, default=30)  # 1º aviso N min antes da PT
 
     characters   = relationship("Character", back_populates="user", cascade="all, delete-orphan")
@@ -60,6 +61,7 @@ class PartyMember(Base):
     role         = Column(String, nullable=False)
     character_id = Column(Integer, ForeignKey("characters.id", ondelete="SET NULL"))  # NULL = convidado sem personagem ainda
     is_coleader  = Column(Boolean, nullable=False, default=False)  # co-líder pode gerenciar a PT
+    is_external  = Column(Boolean, nullable=False, default=False)  # nesta PT não usa pokémon nem recebe ping (de outro servidor)
 
     party     = relationship("Party", back_populates="members")
     user      = relationship("User", back_populates="memberships")

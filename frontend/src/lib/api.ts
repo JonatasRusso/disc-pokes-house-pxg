@@ -39,8 +39,10 @@ export const createSchedule = (body: ScheduleIn) =>
   req<Schedule>("/schedules", { method: "POST", body: JSON.stringify(body) });
 export const reschedule = (id: number, new_start: string, scope: "once" | "all" = "once", force = false) =>
   req<Schedule>(`/schedules/${id}/reschedule`, { method: "PATCH", body: JSON.stringify({ new_start, scope, force }) });
-export const addMember = (id: number, body: { discord_id: string; role: string; character_id: number | null }) =>
+export const addMember = (id: number, body: { discord_id?: string; external_name?: string; role: string; character_id: number | null }) =>
   req<{ ok: boolean }>(`/schedules/${id}/add-member`, { method: "POST", body: JSON.stringify(body) });
+export const setMemberExternal = (id: number, user_id: string, external: boolean) =>
+  req<{ ok: boolean }>(`/schedules/${id}/set-external`, { method: "POST", body: JSON.stringify({ user_id, external }) });
 export const cancelSchedule = (id: number) =>
   req<{ ok: boolean }>(`/schedules/${id}`, { method: "DELETE" });
 export const confirmPresence = (id: number) =>
@@ -123,6 +125,8 @@ export interface ScheduleMember {
   character: string | null;
   confirmed?: boolean;
   is_coleader?: boolean;
+  is_external?: boolean;  // externo nesta PT (não usa pokémon)
+  is_guest?: boolean;     // convidado de outro servidor (sem login) — externo fixo
 }
 
 export interface CalendarParty {

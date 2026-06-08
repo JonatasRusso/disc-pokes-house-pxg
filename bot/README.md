@@ -21,7 +21,7 @@ Processo separado da API (`python -m bot.main`). Compartilha o banco com a API (
 
 ### `scheduler.py` — Jobs periódicos (APScheduler) e notificações
 - **`start_scheduler(bot)`** — registra 3 jobs (cada 20s/20s/30s): `_check_schedules`, `_process_outbox`, `write_heartbeat`.
-- **`_check_schedules(bot)`** — coração das notificações. Roda rollover, depois para cada membro não confirmado decide o aviso: **1º aviso** (N min antes, configurável por usuário), **1 min**, **30s**, **atraso** (a cada 30s). "Avisar e deletar": apaga o aviso anterior e some ao confirmar. Estado em `_warn_state` (podado a cada tick). Dispara o lembrete de pokémon dentro da janela de 30 min.
+- **`_check_schedules(bot)`** — coração das notificações. Roda rollover, **filtra convidados de fora** (`User.is_external` — sem conta no Discord da house, não dá pra pingar; externos de jogo `PartyMember.is_external` recebem aviso e confirmam normalmente, ficando de fora só do lembrete de pokémon), depois para cada membro não confirmado decide o aviso: **1º aviso** (N min antes, configurável por usuário), **1 min**, **30s**, **atraso** (a cada 30s). "Avisar e deletar": apaga o aviso anterior e some ao confirmar. Estado em `_warn_state` (podado a cada tick). Dispara o lembrete de pokémon dentro da janela de 30 min.
 - `_send_warning(...)` — monta/envia o embed do aviso (com reação ✅) e devolve a mensagem.
 - `_delete_warn(channel, key)` — apaga a mensagem de aviso atual.
 - **`handle_confirmation(bot, payload)`** — reação ✅ confirma presença e apaga o aviso.
