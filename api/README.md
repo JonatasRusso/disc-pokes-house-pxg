@@ -9,8 +9,9 @@ Camada de dados/HTTP usada pela **API** e importada também pelo **bot** (models
 ### `main.py` — App FastAPI
 - Cria o `app`, configura **CORS** (`allow_origins=[SITE_URL]`), registra os routers de `api/routes/`.
 - `lifespan(app)` — roda `init_db()` no startup.
-- **`health()`** → `GET /health`: health check rico. Checa banco (`SELECT 1` + latência), lê o **heartbeat do bot** da tabela `bot_heartbeat`, reporta uptime/memória da API (`psutil`) e `env_ok`. Retorna `status: ok|degraded` (degraded se banco caiu, bot sem heartbeat >90s, ou env crítica faltando).
+- **`health()`** → `GET /health`: health check rico. Checa banco (`SELECT 1` + latência), lê o **heartbeat do bot** da tabela `bot_heartbeat`, reporta uptime/memória da API, **recursos do container** (CPU/disco) e `env_ok`. Retorna `status: ok|degraded` (degraded se banco caiu, bot sem heartbeat >90s, ou env crítica faltando). Latência/CPU/disco não afetam o `status` — são métricas para alerta externo.
 - `_api_memory_mb()` — memória do processo da API.
+- `_resources()` — CPU (`cpu_percent`, amostrado em thread p/ não bloquear o loop) e disco (`disk_used_gb`/`disk_total_gb`/`disk_percent`) via `psutil`.
 - Constantes: `START_TIME`, `REQUIRED_ENVS`, `HEARTBEAT_STALE_S`.
 
 ### `database.py` — Conexão e migrações
