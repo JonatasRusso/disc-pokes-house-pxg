@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS users (
     nick        TEXT,            -- apelido no servidor (sincronizado pelo bot)
     avatar_url  TEXT,
     is_admin    BOOLEAN NOT NULL DEFAULT FALSE,
+    is_external BOOLEAN NOT NULL DEFAULT FALSE,  -- convidado de outro servidor: ocupa vaga, mas não usa pokémon nem recebe ping
     notify_lead_minutes INTEGER NOT NULL DEFAULT 30  -- 1º aviso N min antes da PT
 );
 
@@ -27,6 +28,7 @@ CREATE TABLE IF NOT EXISTS party_members (
     role         TEXT    NOT NULL CHECK(role IN ('DPS','SUP','TANK')),
     character_id INTEGER REFERENCES characters(id) ON DELETE SET NULL,  -- NULL = convidado sem personagem ainda
     is_coleader  BOOLEAN NOT NULL DEFAULT FALSE,  -- co-líder pode gerenciar a PT
+    is_external  BOOLEAN NOT NULL DEFAULT FALSE,  -- nesta PT não usa pokémon nem recebe ping (de outro servidor)
     PRIMARY KEY (party_id, user_id)
 );
 

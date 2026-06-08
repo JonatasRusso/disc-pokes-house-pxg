@@ -48,6 +48,8 @@ async def list_members(user: User = Depends(get_current_user), db: AsyncSession 
     for u in users:
         if BOT_ID and u.discord_id == BOT_ID:
             continue
+        if u.is_external:
+            continue  # convidados de outro servidor não entram no seletor da house
         members.append({
             "discord_id": u.discord_id,
             "username":   u.nick or u.username,  # prioriza apelido no servidor

@@ -44,41 +44,6 @@ class PokemonCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
-    @app_commands.command(name="meus-pokemon", description="Ver pokémons atribuídos a você")
-    async def meus_pokemon(self, interaction: discord.Interaction):
-        user_id = str(interaction.user.id)
-        async with AsyncSessionLocal() as db:
-            pokemons = (await db.execute(
-                select(Pokemon).where(Pokemon.assigned_to == user_id).order_by(Pokemon.category, Pokemon.name)
-            )).scalars().all()
-
-        if not pokemons:
-            await interaction.response.send_message("Você não está usando nenhum pokémon no momento.", ephemeral=True)
-            return
-
-        embed = discord.Embed(title="🎮 Seus Pokémons em Uso", color=discord.Color.purple())
-        for cat in ["A", "B", "C"]:
-            group = [p for p in pokemons if p.category == cat]
-            if group:
-                embed.add_field(name=CATEGORY_LABEL[cat], value="\n".join(f"• {p.name}" for p in group), inline=False)
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-
-    @app_commands.command(name="pokemon-status", description="Ver grid de uso de todos os pokémons")
-    async def pokemon_status(self, interaction: discord.Interaction):
-        async with AsyncSessionLocal() as db:
-            pokemons = (await db.execute(select(Pokemon).order_by(Pokemon.category, Pokemon.name))).scalars().all()
-
-        embed = discord.Embed(title="📊 Status dos Pokémons", color=discord.Color.gold())
-        for cat in ["A", "B", "C"]:
-            group = [p for p in pokemons if p.category == cat]
-            if group:
-                lines = []
-                for p in group:
-                    status, _ = _status(p, interaction.guild)
-                    lines.append(f"{status} — {p.name}")
-                embed.add_field(name=CATEGORY_LABEL[cat], value="\n".join(lines), inline=False)
-        await interaction.response.send_message(embed=embed)
-
     @app_commands.command(name="pokemon-painel", description="(Admin) Postar o painel de pokémons no canal")
     async def pokemon_painel(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)

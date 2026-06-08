@@ -1,15 +1,26 @@
 import discord
 from discord import app_commands
 from discord.ext import commands
-from sqlalchemy import select
-from api.database import AsyncSessionLocal
-from api.models import Schedule, ScheduleConfirmation, Party, PartyMember, User
 from bot.config import SITE_URL
 
 
 class ScheduleCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+
+    @app_commands.command(name="site", description="Abrir o painel da House no site (PTs, agenda, pokémons)")
+    async def site(self, interaction: discord.Interaction):
+        url = f"{SITE_URL}/dashboard"
+        embed = discord.Embed(
+            title="🏠 VKG House",
+            description=(
+                f"Tudo é gerenciado no site:\n\n**[Abrir o painel]({url})**\n\n"
+                "Lá você vê e gerencia suas PTs, agenda, remarca, confirma presença e acompanha os pokémons."
+            ),
+            color=discord.Color.blurple(),
+        )
+        embed.set_footer(text="Login com Discord no site.")
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @app_commands.command(name="agendar", description="Abrir formulário para agendar uma PT")
     async def agendar(self, interaction: discord.Interaction):
@@ -22,42 +33,9 @@ class ScheduleCog(commands.Cog):
         embed.set_footer(text="Você precisará fazer login com Discord no site.")
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    @app_commands.command(name="meus-horarios", description="Ver seus próximos horários agendados")
-    async def meus_horarios(self, interaction: discord.Interaction):
-        user_id = str(interaction.user.id)
-        async with AsyncSessionLocal() as db:
-            result = await db.execute(
-                select(Schedule)
-                .join(Party)
-                .join(PartyMember, PartyMember.party_id == Party.id)
-                .where(
-                    PartyMember.user_id == user_id,
-                    Schedule.status.in_(["pending", "confirmed", "rescheduled"]),
-                )
-                .order_by(Schedule.start_time)
-                .limit(5)
-            )
-            schedules = result.scalars().all()
-
-        if not schedules:
-            await interaction.response.send_message("Você não tem horários agendados.", ephemeral=True)
-            return
-
-        embed = discord.Embed(title="📋 Seus Horários", color=discord.Color.green())
-        for s in schedules:
-            eff_start = s.override_start or s.start_time
-            eff_end   = s.override_end or s.end_time
-            extra = "\n📌 Remarcada só esta semana (volta ao normal depois)" if s.override_start else ""
-            embed.add_field(
-                name=f"ID #{s.id} — {s.difficulty}",
-                value=f"🕐 {eff_start.strftime('%d/%m/%Y %H:%M')} → {eff_end.strftime('%H:%M')}\nStatus: `{s.status}`{extra}",
-                inline=False,
-            )
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-
-    @app_commands.command(name="nao-posso", description="Avisar que não pode comparecer e remarcar")
-    @app_commands.describe(id="ID do horário (use /meus-horarios para ver)")
-    async def nao_posso(self, interaction: discord.Interaction, id: int):
+    @app_commands.command(name="remarcar", description="Remarcar uma PT (escolher novo horário no site)")
+    @app_commands.describe(id="ID do horário (veja em Minhas PTs no site)")
+    async def remarcar(self, interaction: discord.Interaction, id: int):
         once_url = f"{SITE_URL}/remarcar/{id}?scope=once"
         all_url  = f"{SITE_URL}/remarcar/{id}?scope=all"
         embed = discord.Embed(

@@ -4,7 +4,7 @@ import { Link } from "react-router-dom";
 import {
   getSchedules, getCharacters, getMembers, WEEKDAY_LABEL, Schedule, Role, ROLE_CAPACITY,
   confirmPresence, leaveParty, setMyCharacter, cancelSchedule,
-  promoteColeader, kickMember, addMember,
+  promoteColeader, kickMember, addMember, setMemberExternal,
 } from "../lib/api";
 import { useAuth } from "../lib/useAuth";
 
@@ -61,8 +61,9 @@ function PTCard({ schedule: s, myId }: { schedule: Schedule; myId: string }) {
   const cancel  = useMutation({ mutationFn: () => cancelSchedule(s.id), onSuccess: refresh });
   const promote = useMutation({ mutationFn: (v: { uid: string; co: boolean }) => promoteColeader(s.id, v.uid, v.co), onSuccess: refresh });
   const kick    = useMutation({ mutationFn: (uid: string) => kickMember(s.id, uid), onSuccess: refresh });
+  const setExt  = useMutation({ mutationFn: (v: { uid: string; ext: boolean }) => setMemberExternal(s.id, v.uid, v.ext), onSuccess: refresh });
 
-  const err = (confirm.error || leave.error || setChar.error || cancel.error || promote.error || kick.error) as Error | null;
+  const err = (confirm.error || leave.error || setChar.error || cancel.error || promote.error || kick.error || setExt.error) as Error | null;
 
   return (
     <div className="bg-gray-900 rounded-lg p-4">
@@ -107,16 +108,40 @@ function PTCard({ schedule: s, myId }: { schedule: Schedule; myId: string }) {
                     {m.nick}
                     {isLeaderMember && <span className="ml-1 text-[10px] text-brand">👑</span>}
                     {m.is_coleader && <span className="ml-1 text-[10px] text-amber-400">co-líder</span>}
+                    {m.is_guest && <span className="ml-1 text-[10px] text-sky-400">convidado</span>}
                   </span>
-                  <span className="text-xs text-gray-500 truncate">{m.character ?? "⚠️ sem personagem"}</span>
+                  <span className="text-xs text-gray-500 truncate">
+                    {m.is_external ? "🌐 usa pokémon próprio (outro servidor)" : (m.character ?? "⚠️ sem personagem")}
+                  </span>
                 </div>
-                <span className={`ml-auto text-[10px] shrink-0 ${m.confirmed ? "text-green-400" : "text-yellow-500"}`}>
-                  {m.confirmed ? "✅" : "⏳"}
-                </span>
+                <div className="ml-auto flex items-center gap-2 shrink-0">
+                  {m.is_guest ? (
+                    // Convidado de outro servidor Discord — não está aqui pra confirmar
+                    <span className="text-[10px] text-sky-400">convidado</span>
+                  ) : (
+                    // Externo de jogo confirma normalmente (é alertado do início da PT)
+                    <span className={`text-[10px] ${m.confirmed ? "text-green-400" : "text-yellow-500"}`}>
+                      {m.confirmed ? "✅" : "⏳"}
+                    </span>
+                  )}
+                  {/* Qualquer membro da PT marca outro como "usa pokémon próprio". Convidado é fixo. */}
+                  {s.is_member && !m.is_guest && (
+                    <button
+                      onClick={() => setExt.mutate({ uid: m.discord_id, ext: !m.is_external })}
+                      disabled={setExt.isPending}
+                      title={m.is_external
+                        ? "Desmarcar: volta a usar os pokémon da house"
+                        : "Marcar: usa pokémon próprio (não os da house)"}
+                      className={`text-[11px] leading-none ${m.is_external ? "text-sky-400" : "text-gray-600 hover:text-sky-400"}`}
+                    >
+                      🌐
+                    </button>
+                  )}
+                </div>
                 {/* Ações de gestão (líder/co-líder), exceto sobre o líder */}
                 {s.can_manage && !isLeaderMember && m.discord_id !== myId && (
                   <div className="flex gap-1 shrink-0">
-                    {s.is_leader && (
+                    {s.is_leader && !m.is_external && (
                       <button
                         onClick={() => promote.mutate({ uid: m.discord_id, co: !m.is_coleader })}
                         className="text-[10px] text-amber-400 hover:underline"
@@ -172,13 +197,15 @@ function PTCard({ schedule: s, myId }: { schedule: Schedule; myId: string }) {
   );
 }
 
-type AddRow = { discord_id: string; character_id: number | "" };
+type AddRow = { external: boolean; discord_id: string; character_id: number | ""; name: string };
+
+const EMPTY_ROW: AddRow = { external: false, discord_id: "", character_id: "", name: "" };
 
 function AddMembers({ scheduleId, missing, currentIds }: { scheduleId: number; missing: Role[]; currentIds: string[] }) {
   const qc = useQueryClient();
   const { data: members = [] } = useQuery({ queryKey: ["members"], queryFn: getMembers });
   const add = useMutation({
-    mutationFn: (b: { discord_id: string; role: string; character_id: number | null }) => addMember(scheduleId, b),
+    mutationFn: (b: { discord_id?: string; external_name?: string; role: string; character_id: number | null }) => addMember(scheduleId, b),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["schedules"] });
       qc.invalidateQueries({ queryKey: ["members"] });
@@ -187,10 +214,7 @@ function AddMembers({ scheduleId, missing, currentIds }: { scheduleId: number; m
 
   const [rows, setRows] = useState<Record<number, AddRow>>({});
   const setRow = (i: number, patch: Partial<AddRow>) =>
-    setRows((prev) => {
-      const base: AddRow = prev[i] ?? { discord_id: "", character_id: "" };
-      return { ...prev, [i]: { ...base, ...patch } };
-    });
+    setRows((prev) => ({ ...prev, [i]: { ...(prev[i] ?? EMPTY_ROW), ...patch } }));
 
   const available = members.filter((m) => !currentIds.includes(m.discord_id));
 
@@ -200,36 +224,64 @@ function AddMembers({ scheduleId, missing, currentIds }: { scheduleId: number; m
         ⚠️ PT incompleta — faltam: <strong>{missing.join(", ")}</strong>
       </p>
       {missing.map((role, i) => {
-        const cur = rows[i] ?? { discord_id: "", character_id: "" };
+        const cur = rows[i] ?? EMPTY_ROW;
         const selMember = members.find((m) => m.discord_id === cur.discord_id);
-        const needChar  = !!selMember && selMember.characters.length > 0;
-        const noChar    = !!selMember && selMember.characters.length === 0;
-        const canAdd    = !!cur.discord_id && !add.isPending && (!needChar || cur.character_id !== "");
+        const needChar  = !cur.external && !!selMember && selMember.characters.length > 0;
+        const noChar    = !cur.external && !!selMember && selMember.characters.length === 0;
+        const canAdd    = cur.external
+          ? cur.name.trim() !== "" && !add.isPending
+          : !!cur.discord_id && !add.isPending && (!needChar || cur.character_id !== "");
         return (
           <div key={i} className="flex flex-wrap items-center gap-2 bg-gray-800/50 rounded px-2 py-1.5">
             <span className={`text-xs font-bold ${ROLE_COLOR[role]}`}>{role}</span>
-            <select
-              className="bg-gray-900 rounded px-2 py-1 text-sm"
-              value={cur.discord_id}
-              onChange={(e) => setRow(i, { discord_id: e.target.value, character_id: "" })}
-            >
-              <option value="">Adicionar {role}...</option>
-              {available.map((m) => <option key={m.discord_id} value={m.discord_id}>{m.username}</option>)}
-            </select>
-            {needChar && (
-              <select
+
+            {cur.external ? (
+              <input
+                type="text"
+                placeholder={`Nome do ${role} (convidado de fora)...`}
+                value={cur.name}
+                onChange={(e) => setRow(i, { name: e.target.value })}
                 className="bg-gray-900 rounded px-2 py-1 text-sm"
-                value={cur.character_id}
-                onChange={(e) => setRow(i, { character_id: e.target.value ? Number(e.target.value) : "" })}
-              >
-                <option value="">Personagem...</option>
-                {selMember!.characters.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
+              />
+            ) : (
+              <>
+                <select
+                  className="bg-gray-900 rounded px-2 py-1 text-sm"
+                  value={cur.discord_id}
+                  onChange={(e) => setRow(i, { discord_id: e.target.value, character_id: "" })}
+                >
+                  <option value="">Adicionar {role}...</option>
+                  {available.map((m) => <option key={m.discord_id} value={m.discord_id}>{m.username}</option>)}
+                </select>
+                {needChar && (
+                  <select
+                    className="bg-gray-900 rounded px-2 py-1 text-sm"
+                    value={cur.character_id}
+                    onChange={(e) => setRow(i, { character_id: e.target.value ? Number(e.target.value) : "" })}
+                  >
+                    <option value="">Personagem...</option>
+                    {selMember!.characters.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                )}
+                {noChar && <span className="text-[11px] text-yellow-400">sem personagem livre — será convidado(a)</span>}
+              </>
             )}
-            {noChar && <span className="text-[11px] text-yellow-400">sem personagem livre — será convidado(a)</span>}
+
+            <label className="flex items-center gap-1 text-[11px] text-gray-400 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={cur.external}
+                onChange={(e) => setRow(i, { external: e.target.checked, discord_id: "", character_id: "", name: "" })}
+                className="accent-sky-500"
+              />
+              convidado de fora
+            </label>
+
             <button
               disabled={!canAdd}
-              onClick={() => add.mutate({ discord_id: cur.discord_id, role, character_id: cur.character_id === "" ? null : cur.character_id })}
+              onClick={() => add.mutate(cur.external
+                ? { external_name: cur.name.trim(), role, character_id: null }
+                : { discord_id: cur.discord_id, role, character_id: cur.character_id === "" ? null : cur.character_id })}
               className="bg-brand hover:bg-brand-dark disabled:opacity-40 text-white text-xs px-3 py-1 rounded"
             >
               Adicionar
@@ -237,6 +289,10 @@ function AddMembers({ scheduleId, missing, currentIds }: { scheduleId: number; m
           </div>
         );
       })}
+      <p className="text-[11px] text-gray-500">
+        <strong>Convidado de fora</strong> = quem não está no Discord da house (só nome; não recebe avisos).
+        Quem <em>está</em> no Discord mas usa pokémon próprio: adicione normal e marque o 🌐 no membro.
+      </p>
       {add.error && <p className="text-red-400 text-xs">{(add.error as Error).message}</p>}
     </div>
   );

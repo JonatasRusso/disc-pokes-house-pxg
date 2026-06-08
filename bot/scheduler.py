@@ -251,6 +251,18 @@ async def _check_schedules(bot: discord.Client):
                 select(PartyMember).where(PartyMember.party_id == schedule.party_id)
             )).scalars().all()
 
+            # Convidados de OUTRO servidor Discord (User.is_external) não estão na guild:
+            # não há como pingar (e evita int() em ids 'ext:'). Os externos de jogo
+            # (PartyMember.is_external, mas presentes no Discord) recebem aviso normalmente —
+            # ficam de fora só do lembrete de pokémon (tratado em _pokemon_pt_reminder).
+            real_members = []
+            for m in members:
+                u = await db.get(User, m.user_id)
+                if u and u.is_external:
+                    continue
+                real_members.append(m)
+            members = real_members
+
             sched_secs = (_eff_start(schedule) - now).total_seconds()
             iso = _eff_start(schedule).isoformat()
 
@@ -336,7 +348,8 @@ async def _pokemon_pt_reminder(bot: discord.Client, db, schedule: Schedule, memb
 
     sent_any = False
     for cat in ["A", "B", "C"]:
-        cat_members = [m for m in members if ROLE_TO_CAT.get(m.role) == cat]
+        # Externos usam pokémon próprio (de outro servidor) — não são chamados para marcar
+        cat_members = [m for m in members if ROLE_TO_CAT.get(m.role) == cat and not m.is_external]
         if not cat_members:
             continue
         channel = bot.get_channel(POKEMON_CHANNELS.get(cat)) if POKEMON_CHANNELS.get(cat) else None

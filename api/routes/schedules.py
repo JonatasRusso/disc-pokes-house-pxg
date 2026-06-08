@@ -1,5 +1,6 @@
 import json
 import os
+import uuid
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -110,6 +111,8 @@ async def _party_members_map(db: AsyncSession, party_ids: list[int]) -> dict[int
             "role":        pm.role,
             "character":   ch.name if ch else None,
             "is_coleader": bool(pm.is_coleader),
+            "is_external": bool(pm.is_external),  # externo NESTA PT (não usa pokémon)
+            "is_guest":    bool(u.is_external),   # convidado de outro servidor (sem login)
         })
     for members in out.values():
         members.sort(key=lambda m: role_order.get(m["role"], 9))
@@ -450,6 +453,7 @@ async def kick_member(schedule_id: int, body: PromoteIn, user: User = Depends(ge
     pm = await _my_membership(db, schedule, body.user_id)
     if not pm:
         raise HTTPException(404, "Membro não está na PT")
+    target = await db.get(User, body.user_id)
     await db.delete(pm)
     conf = await db.execute(select(ScheduleConfirmation).where(
         ScheduleConfirmation.schedule_id == schedule_id, ScheduleConfirmation.user_id == body.user_id))
@@ -458,23 +462,39 @@ async def kick_member(schedule_id: int, body: PromoteIn, user: User = Depends(ge
         await db.delete(conf)
     db.add(History(actor_id=user.discord_id, entity_type="schedule", entity_id=schedule_id, action="kicked",
                    detail=f'{{"member":"{body.user_id}"}}'))
-    db.add(Outbox(kind="party_left", target_user_id=body.user_id, payload=json.dumps({
-        "who": "A liderança", "schedule_id": schedule_id, "kicked": True,
-    })))
+    # Externo não recebe aviso no Discord (não está no servidor) e o registro-convidado é descartado.
+    if target and target.is_external:
+        await db.delete(target)
+    else:
+        db.add(Outbox(kind="party_left", target_user_id=body.user_id, payload=json.dumps({
+            "who": "A liderança", "schedule_id": schedule_id, "kicked": True,
+        })))
     await db.commit()
     return {"ok": True}
 
 
 class AddMemberIn(BaseModel):
-    discord_id: str
+    discord_id: str | None = None     # membro da house (do seletor)
+    external_name: str | None = None  # OU convidado de outro servidor (só nome)
     role: str
     character_id: int | None = None
+
+
+async def _add_capacity_check(db: AsyncSession, schedule: Schedule, role: str):
+    members = (await db.execute(
+        select(PartyMember).where(PartyMember.party_id == schedule.party_id)
+    )).scalars().all()
+    if len(members) >= 4:
+        raise HTTPException(400, "A PT já está completa.")
+    if sum(1 for m in members if m.role == role) >= ROLE_CAPACITY[role]:
+        raise HTTPException(400, f"A PT já tem o máximo de {role} ({ROLE_CAPACITY[role]}).")
 
 
 @router.post("/{schedule_id}/add-member")
 async def add_member(schedule_id: int, body: AddMemberIn, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     """Líder/co-líder/admin adiciona um membro a uma PT incompleta.
-    Respeita a composição 1 TANK / 2 DPS / 1 SUP e convida o membro no Discord."""
+    Respeita a composição 1 TANK / 2 DPS / 1 SUP. O membro pode ser da house (convidado
+    no Discord) ou um externo de outro servidor (só ocupa a vaga — não usa pokémon)."""
     schedule = await db.get(Schedule, schedule_id)
     if not schedule:
         raise HTTPException(404, "Horário não encontrado")
@@ -483,19 +503,31 @@ async def add_member(schedule_id: int, body: AddMemberIn, user: User = Depends(g
     if body.role not in ROLES:
         raise HTTPException(400, f"Função inválida. Use: {ROLES}")
 
+    # --- Externo de outro servidor: ocupa a vaga, sem login/pokémon/ping ---
+    if body.external_name and not body.discord_id:
+        name = body.external_name.strip()[:40]
+        if not name:
+            raise HTTPException(400, "Informe o nome do externo.")
+        await _add_capacity_check(db, schedule, body.role)
+        guest_id = f"ext:{uuid.uuid4().hex}"
+        db.add(User(discord_id=guest_id, username=name, nick=name, is_external=True))
+        db.add(PartyMember(party_id=schedule.party_id, user_id=guest_id, role=body.role,
+                           character_id=None, is_external=True))
+        db.add(History(actor_id=user.discord_id, entity_type="schedule", entity_id=schedule_id,
+                       action="member_added", detail=json.dumps({"external": name, "role": body.role})))
+        await db.commit()
+        return {"ok": True}
+
+    # --- Membro da house ---
+    if not body.discord_id:
+        raise HTTPException(400, "Informe o membro ou o nome do externo.")
     if await _my_membership(db, schedule, body.discord_id):
         raise HTTPException(400, "Esse usuário já está na PT.")
 
-    members = (await db.execute(
-        select(PartyMember).where(PartyMember.party_id == schedule.party_id)
-    )).scalars().all()
-    if len(members) >= 4:
-        raise HTTPException(400, "A PT já está completa.")
-    if sum(1 for m in members if m.role == body.role) >= ROLE_CAPACITY[body.role]:
-        raise HTTPException(400, f"A PT já tem o máximo de {body.role} ({ROLE_CAPACITY[body.role]}).")
+    await _add_capacity_check(db, schedule, body.role)
 
     target = await db.get(User, body.discord_id)
-    if not target:
+    if not target or target.is_external:
         raise HTTPException(404, "Usuário não encontrado no servidor.")
 
     if body.character_id is not None:
@@ -525,6 +557,36 @@ async def add_member(schedule_id: int, body: AddMemberIn, user: User = Depends(g
     return {"ok": True}
 
 
+class SetExternalIn(BaseModel):
+    user_id: str
+    external: bool = True
+
+
+@router.post("/{schedule_id}/set-external")
+async def set_member_external(schedule_id: int, body: SetExternalIn, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Marca/desmarca um membro como externo NESTA PT (não usa pokémon nem recebe ping).
+    Qualquer membro da PT (ou admin) pode marcar."""
+    schedule = await db.get(Schedule, schedule_id)
+    if not schedule:
+        raise HTTPException(404, "Horário não encontrado")
+    if not (user.is_admin or await _my_membership(db, schedule, user.discord_id)):
+        raise HTTPException(403, "Você não é membro desta PT.")
+
+    pm = await _my_membership(db, schedule, body.user_id)
+    if not pm:
+        raise HTTPException(404, "Membro não está na PT")
+
+    target = await db.get(User, body.user_id)
+    if target and target.is_external and not body.external:
+        raise HTTPException(400, "Convidado de outro servidor é sempre externo.")
+
+    pm.is_external = body.external
+    db.add(History(actor_id=user.discord_id, entity_type="schedule", entity_id=schedule_id,
+                   action="member_external", detail=json.dumps({"member": body.user_id, "external": body.external})))
+    await db.commit()
+    return {"ok": True}
+
+
 @router.post("/{schedule_id}/confirm")
 async def confirm_presence(schedule_id: int, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     """Membro confirma presença na PT."""
@@ -534,7 +596,7 @@ async def confirm_presence(schedule_id: int, user: User = Depends(get_current_us
     pm = await _my_membership(db, schedule, user.discord_id)
     if not pm:
         raise HTTPException(403, "Você não é membro desta party")
-    if pm.character_id is None:
+    if pm.character_id is None and not pm.is_external:
         raise HTTPException(400, "Defina seu personagem antes de confirmar.")
 
     conf = await db.execute(
@@ -583,8 +645,11 @@ async def leave_party(schedule_id: int, user: User = Depends(get_current_user), 
 
     db.add(History(actor_id=user.discord_id, entity_type="schedule", entity_id=schedule_id, action="left"))
 
-    # Avisa os demais membros no canal
+    # Avisa os demais membros no canal (externos não recebem aviso — não estão no servidor)
     for m in remaining:
+        mu = await db.get(User, m.user_id)
+        if mu and mu.is_external:
+            continue
         db.add(Outbox(kind="party_left", target_user_id=m.user_id, payload=json.dumps({
             "who": user.username, "schedule_id": schedule_id,
         })))

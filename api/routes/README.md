@@ -35,7 +35,8 @@ Cada arquivo é um `APIRouter` registrado em `api/main.py`. Prefixo entre parên
 - `GET /free-slots` — grade semanal: cada hora (00:00–23:00) dos próximos 7 dias com flag `free` (sem trava de horário passado; recorrente). Query `exclude={id}` ignora uma PT (libera o slot dela ao remarcar).
 - `POST ""` (`create_schedule`) — cria PT recorrente; `include_self=false` (admin) cria sem participar; enfileira convites na `outbox`.
 - `PATCH /{id}/reschedule` — remarca (líder/co-líder/admin); reseta confirmações e avisa os demais membros (outbox `party_rescheduled`). Body `scope`: `"once"` (padrão — só esta semana, grava `override_start/end`) ou `"all"` (redefine o slot fixo e limpa override). Conflito do `once` é por ocorrência efetiva real; o `all` usa a grade semanal — ambos ignoram a própria PT. Body `force=true` ignora conflito com OUTRA PT (sobrescreve mesmo ocupado).
-- `POST /{id}/add-member` — líder/co-líder/admin adiciona membro a uma PT incompleta; valida a composição (`ROLE_CAPACITY`), cria `PartyMember` + confirmação pendente e convida no Discord (outbox `party_invite`).
+- `POST /{id}/add-member` — líder/co-líder/admin adiciona membro a uma PT incompleta; valida a composição (`ROLE_CAPACITY`). Membro da house (`discord_id`): cria `PartyMember` + confirmação pendente e convida no Discord (outbox `party_invite`). Externo de outro servidor (`external_name`): cria um `User` convidado (`is_external=true`, id `ext:<uuid>`) + `PartyMember.is_external=true`. O externo ocupa a vaga mas **não usa pokémon, não recebe ping e não confirma**. Membros são serializados com `is_external` (flag por participação `party_members.is_external`) e `is_guest` (convidado, `users.is_external`).
+- `POST /{id}/set-external` — **qualquer membro da PT** (ou admin) marca/desmarca outro membro como externo nesta PT (`party_members.is_external`): usa pokémon próprio (de outro servidor de jogo), então **fica fora do lembrete de pokémon** — mas continua recebendo aviso de início e confirmando presença. Convidado (`is_guest`) é externo fixo. Log `member_external`.
 - `POST /{id}/confirm` — membro confirma presença.
 - `POST /{id}/leave` — membro sai; cancela a PT se esvaziar; avisa os demais (outbox).
 - `PATCH /{id}/my-character` — membro define seu personagem na PT.
@@ -51,7 +52,7 @@ Cada arquivo é um `APIRouter` registrado em `api/main.py`. Prefixo entre parên
 - `_poke_dict(p)` — serializa.
 
 ## `members.py` — `/members`
-- `GET ""` — todos os membros do servidor (tabela `users`, populada pelo bot) com seus **personagens livres** (não ocupados em PT ativa). Usado no seletor de membros ao agendar.
+- `GET ""` — todos os membros do servidor (tabela `users`, populada pelo bot) com seus **personagens livres** (não ocupados em PT ativa). Usado no seletor de membros ao agendar. **Exclui convidados externos** (`is_external`).
 - `occupied_character_ids(db)` — personagens ocupados.
 
 ## `history.py` — `/history` (admin)
