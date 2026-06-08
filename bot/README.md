@@ -29,7 +29,8 @@ Processo separado da API (`python -m bot.main`). Compartilha o banco com a API (
 - **`_rollover_recurring()`** — avança PTs cuja ocorrência **efetiva** terminou +7 dias (recorrência) e reseta confirmações. Uma remarcação de 1 semana (`override_start/end`) é consumida aqui: limpa o override e pula o slot fixo desta semana, voltando ao normal na próxima.
 - **`_eff_start(s)` / `_eff_end(s)`** — ocorrência efetiva (override de 1 semana, se houver). Usadas na janela de checagem, no rollover e na chave `iso` dos avisos.
 - **`_pokemon_pt_reminder(...)`** — quando a PT entra na janela de 30 min, marca os membros no canal de cada função listando pokémons livres (1x por ocorrência).
-- Constantes: `ROLE_TO_CAT`, `CAT_LABEL`, `OUTBOX_GIVEUP`.
+- **Limpeza dos canais:** mensagens transitórias do bot se auto-apagam (`delete_after`) para não poluir — convites/saída/remarcação (`NOTICE_TTL_S`, 30 min) e lembrete de pokémon (`POKE_REMINDER_TTL_S`, 40 min). Avisos de PT já somem ao confirmar; o que sobra é apagado quando a ocorrência sai da janela (prune em `_check_schedules`). O **painel** de `/pokemon-painel` é permanente (não é apagado).
+- Constantes: `ROLE_TO_CAT`, `CAT_LABEL`, `OUTBOX_GIVEUP`, `NOTICE_TTL_S`, `POKE_REMINDER_TTL_S`.
 
 ### `health.py` — Heartbeat do bot
 - **`write_heartbeat(bot)`** — grava na tabela `bot_heartbeat` (is_ready, latência, guilds, memória, last_command_at) para o `/health` da API ler.
