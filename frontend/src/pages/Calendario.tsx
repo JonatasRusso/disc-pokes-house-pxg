@@ -3,7 +3,7 @@ import { getFreeSlots, getCalendar } from "../lib/api";
 import WeeklySlots from "../components/WeeklySlots";
 
 export default function Calendario() {
-  const { data: slots   = [] } = useQuery({ queryKey: ["free-slots"], queryFn: getFreeSlots });
+  const { data: slots   = [] } = useQuery({ queryKey: ["free-slots"], queryFn: () => getFreeSlots() });
   const { data: parties = [] } = useQuery({ queryKey: ["calendar"],   queryFn: getCalendar });
 
   return (

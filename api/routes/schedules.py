@@ -17,6 +17,7 @@ from api.timeutil import now_local
 router = APIRouter(prefix="/schedules", tags=["schedules"])
 
 ROLES = {"DPS", "SUP", "TANK"}
+ROLE_CAPACITY = {"TANK": 1, "DPS": 2, "SUP": 1}  # composição da PT: 1 tank, 2 dps, 1 suporte
 DIFFICULTIES = {"HARD", "NW"}
 ACTIVE_STATUSES = ["pending", "confirmed", "rescheduled"]
 SITE_URL = os.getenv("SITE_URL", "http://localhost:5173")
@@ -32,9 +33,13 @@ def next_occurrence(weekday: int, hour: int, after: datetime) -> datetime:
     return candidate
 
 
-async def _busy_weekday_hours(db: AsyncSession) -> list[tuple[int, int]]:
-    """(dia_da_semana, hora) de cada PT ativa — base da grade semanal recorrente."""
-    result = await db.execute(select(Schedule).where(Schedule.status.in_(ACTIVE_STATUSES)))
+async def _busy_weekday_hours(db: AsyncSession, exclude: int | None = None) -> list[tuple[int, int]]:
+    """(dia_da_semana, hora) de cada PT ativa — base da grade semanal recorrente.
+    `exclude`: ignora um schedule (ex.: ao remarcar a própria PT, libera o slot dela)."""
+    q = select(Schedule).where(Schedule.status.in_(ACTIVE_STATUSES))
+    if exclude is not None:
+        q = q.where(Schedule.id != exclude)
+    result = await db.execute(q)
     return [(s.start_time.weekday(), s.start_time.hour) for s in result.scalars().all()]
 
 
@@ -74,7 +79,8 @@ async def _occupied_character_ids(db: AsyncSession) -> set[int]:
 
 class RescheduleIn(BaseModel):
     new_start: datetime
-    scope: str = "once"   # "once" = só esta semana (override) | "all" = redefine o slot fixo
+    scope: str = "once"    # "once" = só esta semana (override) | "all" = redefine o slot fixo
+    force: bool = False    # ignora conflito com OUTRA PT (sobrescreve o horário mesmo ocupado)
 
 
 def _eff_start(s: Schedule) -> datetime:
@@ -173,14 +179,15 @@ async def calendar(user: User = Depends(get_current_user), db: AsyncSession = De
 
 
 @router.get("/free-slots")
-async def free_slots(db: AsyncSession = Depends(get_db)):
+async def free_slots(exclude: int | None = None, db: AsyncSession = Depends(get_db)):
     """Grade semanal recorrente: para cada hora (00:00..23:00) dos 7 dias da semana,
     retorna o bloco de 3h com flag `free`. Sem trava de horário — escolher um dia já
-    passado nesta semana agenda para a próxima semana. Livre = sem conflito recorrente."""
+    passado nesta semana agenda para a próxima semana. Livre = sem conflito recorrente.
+    `exclude`: schedule a ignorar (ao remarcar, libera o slot da própria PT)."""
     day_start = now_local().replace(hour=0, minute=0, second=0, microsecond=0)
     end       = day_start + timedelta(days=7)
 
-    busy = await _busy_weekday_hours(db)
+    busy = await _busy_weekday_hours(db, exclude=exclude)
 
     slots = []
     cursor = day_start
@@ -323,11 +330,12 @@ async def reschedule(schedule_id: int, body: RescheduleIn, user: User = Depends(
     new_end   = new_start + timedelta(hours=3)
 
     if body.scope == "all":
-        # Redefine o slot fixo recorrente. Conflito na grade semanal (ignora a própria PT).
-        busy = [(wd, h) for (wd, h) in await _busy_weekday_hours(db)
-                if not (wd == schedule.start_time.weekday() and h == schedule.start_time.hour)]
-        if _conflicts(new_start.weekday(), new_start.hour, busy):
-            raise HTTPException(400, "Já existe uma PT nesse horário semanal.")
+        # Redefine o slot fixo recorrente. Conflito na grade semanal, ignorando a própria PT
+        # (libera o próprio slot). `force` permite sobrescrever o horário de OUTRA PT.
+        busy = await _busy_weekday_hours(db, exclude=schedule_id)
+        if _conflicts(new_start.weekday(), new_start.hour, busy) and not body.force:
+            raise HTTPException(400, "Já existe uma PT nesse horário semanal. "
+                                     "Marque a opção de sobrescrever para continuar.")
         schedule.start_time     = new_start
         schedule.end_time       = new_end
         schedule.override_start = None   # redefinir o fixo cancela qualquer remarcação de 1 semana
@@ -342,9 +350,10 @@ async def reschedule(schedule_id: int, body: RescheduleIn, user: User = Depends(
                 Schedule.id != schedule_id,
             )
         )).scalars().all()
-        for o in others:
-            if new_start < _eff_end(o) and _eff_start(o) < new_end:
-                raise HTTPException(400, "Já existe uma PT nesse horário.")
+        conflict = any(new_start < _eff_end(o) and _eff_start(o) < new_end for o in others)
+        if conflict and not body.force:
+            raise HTTPException(400, "Já existe uma PT nesse horário. "
+                                     "Marque a opção de sobrescrever para continuar.")
         schedule.override_start = new_start
         schedule.override_end   = new_end
 
@@ -452,6 +461,66 @@ async def kick_member(schedule_id: int, body: PromoteIn, user: User = Depends(ge
     db.add(Outbox(kind="party_left", target_user_id=body.user_id, payload=json.dumps({
         "who": "A liderança", "schedule_id": schedule_id, "kicked": True,
     })))
+    await db.commit()
+    return {"ok": True}
+
+
+class AddMemberIn(BaseModel):
+    discord_id: str
+    role: str
+    character_id: int | None = None
+
+
+@router.post("/{schedule_id}/add-member")
+async def add_member(schedule_id: int, body: AddMemberIn, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Líder/co-líder/admin adiciona um membro a uma PT incompleta.
+    Respeita a composição 1 TANK / 2 DPS / 1 SUP e convida o membro no Discord."""
+    schedule = await db.get(Schedule, schedule_id)
+    if not schedule:
+        raise HTTPException(404, "Horário não encontrado")
+    if not await _can_manage(db, schedule, user):
+        raise HTTPException(403, "Apenas líder/co-líder podem adicionar membros.")
+    if body.role not in ROLES:
+        raise HTTPException(400, f"Função inválida. Use: {ROLES}")
+
+    if await _my_membership(db, schedule, body.discord_id):
+        raise HTTPException(400, "Esse usuário já está na PT.")
+
+    members = (await db.execute(
+        select(PartyMember).where(PartyMember.party_id == schedule.party_id)
+    )).scalars().all()
+    if len(members) >= 4:
+        raise HTTPException(400, "A PT já está completa.")
+    if sum(1 for m in members if m.role == body.role) >= ROLE_CAPACITY[body.role]:
+        raise HTTPException(400, f"A PT já tem o máximo de {body.role} ({ROLE_CAPACITY[body.role]}).")
+
+    target = await db.get(User, body.discord_id)
+    if not target:
+        raise HTTPException(404, "Usuário não encontrado no servidor.")
+
+    if body.character_id is not None:
+        ch = await db.get(Character, body.character_id)
+        if not ch or ch.user_id != body.discord_id:
+            raise HTTPException(400, "Personagem inválido para esse membro.")
+        if body.character_id in await _occupied_character_ids(db):
+            raise HTTPException(400, f"Personagem '{ch.name}' já está em uma PT ativa.")
+
+    db.add(PartyMember(
+        party_id=schedule.party_id, user_id=body.discord_id,
+        role=body.role, character_id=body.character_id,
+    ))
+    db.add(ScheduleConfirmation(schedule_id=schedule_id, user_id=body.discord_id))
+    db.add(Outbox(kind="party_invite", target_user_id=body.discord_id, payload=json.dumps({
+        "inviter":         user.nick or user.username,
+        "schedule_id":     schedule_id,
+        "start_time":      _eff_start(schedule).isoformat(),
+        "difficulty":      schedule.difficulty,
+        "role":            body.role,
+        "needs_character": body.character_id is None,
+        "link":            f"{SITE_URL}/minhas-pts",
+    })))
+    db.add(History(actor_id=user.discord_id, entity_type="schedule", entity_id=schedule_id,
+                   action="member_added", detail=f'{{"member":"{body.discord_id}","role":"{body.role}"}}'))
     await db.commit()
     return {"ok": True}
 

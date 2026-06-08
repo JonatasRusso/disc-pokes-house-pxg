@@ -2,9 +2,9 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import {
-  getSchedules, getCharacters, WEEKDAY_LABEL, Schedule,
+  getSchedules, getCharacters, getMembers, WEEKDAY_LABEL, Schedule, Role, ROLE_CAPACITY,
   confirmPresence, leaveParty, setMyCharacter, cancelSchedule,
-  promoteColeader, kickMember,
+  promoteColeader, kickMember, addMember,
 } from "../lib/api";
 import { useAuth } from "../lib/useAuth";
 
@@ -45,6 +45,12 @@ export default function MinhasPTs() {
 function PTCard({ schedule: s, myId }: { schedule: Schedule; myId: string }) {
   const qc = useQueryClient();
   const me = s.members.find((m) => m.discord_id === myId);
+
+  // Composição alvo 1 TANK / 2 DPS / 1 SUP — papéis que faltam para completar a PT
+  const counts: Record<Role, number> = { TANK: 0, DPS: 0, SUP: 0 };
+  s.members.forEach((m) => { counts[m.role]++; });
+  const missing: Role[] = (["TANK", "DPS", "SUP"] as Role[])
+    .flatMap((r) => Array(Math.max(0, ROLE_CAPACITY[r] - counts[r])).fill(r));
   const [pickChar, setPickChar] = useState<number | "">("");
   const { data: chars = [] } = useQuery({ queryKey: ["characters"], queryFn: getCharacters });
   const refresh = () => qc.invalidateQueries({ queryKey: ["schedules"] });
@@ -128,6 +134,15 @@ function PTCard({ schedule: s, myId }: { schedule: Schedule; myId: string }) {
         </div>
       )}
 
+      {/* Adicionar membros (PT incompleta) — líder/co-líder */}
+      {s.can_manage && missing.length > 0 && (
+        <AddMembers
+          scheduleId={s.id}
+          missing={missing}
+          currentIds={s.members.map((m) => m.discord_id)}
+        />
+      )}
+
       {/* Ações próprias */}
       {me && (
         <div className="mt-3 pt-3 border-t border-gray-800 flex flex-wrap items-center gap-2">
@@ -153,6 +168,76 @@ function PTCard({ schedule: s, myId }: { schedule: Schedule; myId: string }) {
       )}
 
       {err && <p className="mt-2 text-red-400 text-xs">{err.message}</p>}
+    </div>
+  );
+}
+
+type AddRow = { discord_id: string; character_id: number | "" };
+
+function AddMembers({ scheduleId, missing, currentIds }: { scheduleId: number; missing: Role[]; currentIds: string[] }) {
+  const qc = useQueryClient();
+  const { data: members = [] } = useQuery({ queryKey: ["members"], queryFn: getMembers });
+  const add = useMutation({
+    mutationFn: (b: { discord_id: string; role: string; character_id: number | null }) => addMember(scheduleId, b),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["schedules"] });
+      qc.invalidateQueries({ queryKey: ["members"] });
+    },
+  });
+
+  const [rows, setRows] = useState<Record<number, AddRow>>({});
+  const setRow = (i: number, patch: Partial<AddRow>) =>
+    setRows((prev) => {
+      const base: AddRow = prev[i] ?? { discord_id: "", character_id: "" };
+      return { ...prev, [i]: { ...base, ...patch } };
+    });
+
+  const available = members.filter((m) => !currentIds.includes(m.discord_id));
+
+  return (
+    <div className="mt-3 pt-3 border-t border-gray-800 space-y-2">
+      <p className="text-xs text-amber-400">
+        ⚠️ PT incompleta — faltam: <strong>{missing.join(", ")}</strong>
+      </p>
+      {missing.map((role, i) => {
+        const cur = rows[i] ?? { discord_id: "", character_id: "" };
+        const selMember = members.find((m) => m.discord_id === cur.discord_id);
+        const needChar  = !!selMember && selMember.characters.length > 0;
+        const noChar    = !!selMember && selMember.characters.length === 0;
+        const canAdd    = !!cur.discord_id && !add.isPending && (!needChar || cur.character_id !== "");
+        return (
+          <div key={i} className="flex flex-wrap items-center gap-2 bg-gray-800/50 rounded px-2 py-1.5">
+            <span className={`text-xs font-bold ${ROLE_COLOR[role]}`}>{role}</span>
+            <select
+              className="bg-gray-900 rounded px-2 py-1 text-sm"
+              value={cur.discord_id}
+              onChange={(e) => setRow(i, { discord_id: e.target.value, character_id: "" })}
+            >
+              <option value="">Adicionar {role}...</option>
+              {available.map((m) => <option key={m.discord_id} value={m.discord_id}>{m.username}</option>)}
+            </select>
+            {needChar && (
+              <select
+                className="bg-gray-900 rounded px-2 py-1 text-sm"
+                value={cur.character_id}
+                onChange={(e) => setRow(i, { character_id: e.target.value ? Number(e.target.value) : "" })}
+              >
+                <option value="">Personagem...</option>
+                {selMember!.characters.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            )}
+            {noChar && <span className="text-[11px] text-yellow-400">sem personagem livre — será convidado(a)</span>}
+            <button
+              disabled={!canAdd}
+              onClick={() => add.mutate({ discord_id: cur.discord_id, role, character_id: cur.character_id === "" ? null : cur.character_id })}
+              className="bg-brand hover:bg-brand-dark disabled:opacity-40 text-white text-xs px-3 py-1 rounded"
+            >
+              Adicionar
+            </button>
+          </div>
+        );
+      })}
+      {add.error && <p className="text-red-400 text-xs">{(add.error as Error).message}</p>}
     </div>
   );
 }

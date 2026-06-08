@@ -32,12 +32,15 @@ export const getMembers = () => req<Member[]>("/members");
 
 // --- Schedules ---
 export const getSchedules = () => req<Schedule[]>("/schedules");
-export const getFreeSlots = () => req<Slot[]>("/schedules/free-slots");
+export const getFreeSlots = (exclude?: number) =>
+  req<Slot[]>(`/schedules/free-slots${exclude != null ? `?exclude=${exclude}` : ""}`);
 export const getCalendar  = () => req<CalendarParty[]>("/schedules/calendar");
 export const createSchedule = (body: ScheduleIn) =>
   req<Schedule>("/schedules", { method: "POST", body: JSON.stringify(body) });
-export const reschedule = (id: number, new_start: string, scope: "once" | "all" = "once") =>
-  req<Schedule>(`/schedules/${id}/reschedule`, { method: "PATCH", body: JSON.stringify({ new_start, scope }) });
+export const reschedule = (id: number, new_start: string, scope: "once" | "all" = "once", force = false) =>
+  req<Schedule>(`/schedules/${id}/reschedule`, { method: "PATCH", body: JSON.stringify({ new_start, scope, force }) });
+export const addMember = (id: number, body: { discord_id: string; role: string; character_id: number | null }) =>
+  req<{ ok: boolean }>(`/schedules/${id}/add-member`, { method: "POST", body: JSON.stringify(body) });
 export const cancelSchedule = (id: number) =>
   req<{ ok: boolean }>(`/schedules/${id}`, { method: "DELETE" });
 export const confirmPresence = (id: number) =>
@@ -133,6 +136,10 @@ export interface CalendarParty {
 
 // 0=Seg..6=Dom (Python weekday) para exibição
 export const WEEKDAY_LABEL = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"];
+
+// Composição da PT: 1 tank, 2 dps, 1 suporte
+export type Role = "TANK" | "DPS" | "SUP";
+export const ROLE_CAPACITY: Record<Role, number> = { TANK: 1, DPS: 2, SUP: 1 };
 
 export interface Slot {
   start: string;

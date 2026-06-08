@@ -5,6 +5,7 @@ interface Props {
   selected: string;
   onSelect: (startIso: string) => void;
   parties?: CalendarParty[];
+  allowOccupied?: boolean;  // permite selecionar o início de uma PT já marcada (sobrescrever)
 }
 
 const WEEKDAYS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
@@ -29,7 +30,7 @@ function pyWeekday(dk: string) {
 
 interface CellParty { party: CalendarParty; isStart: boolean }
 
-export default function WeeklySlots({ slots, selected, onSelect, parties = [] }: Props) {
+export default function WeeklySlots({ slots, selected, onSelect, parties = [], allowOccupied = false }: Props) {
   // Dias distintos ordenados começando na segunda-feira
   const days = Array.from(new Set(slots.map((s) => dayKey(s.start)))).sort(
     (a, b) => mondayIndex(a) - mondayIndex(b)
@@ -62,7 +63,7 @@ export default function WeeklySlots({ slots, selected, onSelect, parties = [] }:
     <div className="flex flex-wrap items-center gap-4 text-xs text-gray-400">
       <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-emerald-600/40 inline-block" /> disponível</span>
       <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-brand inline-block" /> selecionado</span>
-      <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-amber-600/60 inline-block" /> PT marcada</span>
+      <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-amber-600/60 inline-block" /> PT marcada{allowOccupied && " (clicável p/ sobrescrever)"}</span>
     </div>
     <div className="rounded-lg border border-gray-800 bg-gray-900/50 overflow-hidden">
       <div className="overflow-auto max-h-[26rem] md:max-h-none md:overflow-visible">
@@ -94,6 +95,7 @@ export default function WeeklySlots({ slots, selected, onSelect, parties = [] }:
               partyByCell={partyByCell}
               selected={selected}
               onSelect={onSelect}
+              allowOccupied={allowOccupied}
             />
           ))}
         </div>
@@ -110,7 +112,7 @@ function membersTitle(p: CalendarParty): string {
 }
 
 function Row({
-  hour, days, grid, partyByCell, selected, onSelect,
+  hour, days, grid, partyByCell, selected, onSelect, allowOccupied,
 }: {
   hour: number;
   days: string[];
@@ -118,6 +120,7 @@ function Row({
   partyByCell: Map<string, CellParty>;
   selected: string;
   onSelect: (iso: string) => void;
+  allowOccupied: boolean;
 }) {
   const label = `${String(hour).padStart(2, "0")}:00`;
   return (
@@ -131,27 +134,47 @@ function Row({
         const free = slot?.free;
         const cell = partyByCell.get(`${pyWeekday(dk)}-${hour}`);
 
+        // Em modo sobrescrever, a célula inicial de uma PT vira um botão selecionável.
+        const canOverwrite = allowOccupied && cell?.isStart && !!slot;
+        const cellContent = cell && (cell.isStart ? (
+          <>
+            <span className="font-semibold text-amber-200">{cell.party.difficulty}</span>
+            <span className="truncate text-amber-100/80">
+              {cell.party.members.map((m) => m.nick).join(", ") || "PT"}
+            </span>
+          </>
+        ) : (
+          <span className="truncate text-amber-100/60">
+            {cell.party.members.map((m) => `${m.role[0]}·${m.nick}`).join("  ")}
+          </span>
+        ));
+
         return (
           <div key={dk + hour} className="h-9 border-b border-l border-gray-800/60 p-0.5">
             {cell ? (
-              // Célula ocupada por uma PT — mostra quem está nela
-              <div
-                title={membersTitle(cell.party)}
-                className="w-full h-full rounded bg-amber-600/40 text-[10px] leading-tight px-1 overflow-hidden flex flex-col justify-center cursor-help"
-              >
-                {cell.isStart ? (
-                  <>
-                    <span className="font-semibold text-amber-200">{cell.party.difficulty}</span>
-                    <span className="truncate text-amber-100/80">
-                      {cell.party.members.map((m) => m.nick).join(", ") || "PT"}
-                    </span>
-                  </>
-                ) : (
-                  <span className="truncate text-amber-100/60">
-                    {cell.party.members.map((m) => `${m.role[0]}·${m.nick}`).join("  ")}
-                  </span>
-                )}
-              </div>
+              canOverwrite ? (
+                // Sobrescrever: clica no início da PT existente para tomar esse horário
+                <button
+                  title={`Sobrescrever — ${membersTitle(cell.party)}`}
+                  onClick={() => {
+                    if (window.confirm(`Esse horário já tem uma PT (${cell.party.members.map((m) => m.nick).join(", ") || cell.party.difficulty}). Marcar mesmo assim?`))
+                      onSelect(slot!.start);
+                  }}
+                  className={`w-full h-full rounded text-[10px] leading-tight px-1 overflow-hidden flex flex-col justify-center transition-colors ${
+                    isSel ? "bg-brand ring-2 ring-brand" : "bg-amber-600/40 hover:bg-amber-500/60"
+                  }`}
+                >
+                  {cellContent}
+                </button>
+              ) : (
+                // Célula ocupada por uma PT — mostra quem está nela
+                <div
+                  title={membersTitle(cell.party)}
+                  className="w-full h-full rounded bg-amber-600/40 text-[10px] leading-tight px-1 overflow-hidden flex flex-col justify-center cursor-help"
+                >
+                  {cellContent}
+                </div>
+              )
             ) : slot ? (
               <button
                 disabled={!free}

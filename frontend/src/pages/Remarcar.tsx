@@ -15,14 +15,18 @@ export default function Remarcar() {
   const [params] = useSearchParams();
   const initialScope: Scope = params.get("scope") === "all" ? "all" : "once";
 
-  const { data: slots   = [] } = useQuery({ queryKey: ["free-slots"], queryFn: getFreeSlots });
+  // Grade ignorando a PRÓPRIA PT → o slot atual dela fica livre para manter/ajustar.
+  const { data: slots   = [] } = useQuery({ queryKey: ["free-slots", scheduleId], queryFn: () => getFreeSlots(scheduleId) });
   const { data: parties = [] } = useQuery({ queryKey: ["calendar"],   queryFn: getCalendar });
-  const [slot,  setSlot]  = useState("");
-  const [scope, setScope] = useState<Scope>(initialScope);
-  const [error, setError] = useState("");
+  const otherParties = parties.filter((p) => p.schedule_id !== scheduleId);
+
+  const [slot,      setSlot]      = useState("");
+  const [scope,     setScope]     = useState<Scope>(initialScope);
+  const [overwrite, setOverwrite] = useState(false);
+  const [error,     setError]     = useState("");
 
   const doReschedule = useMutation({
-    mutationFn: () => reschedule(scheduleId, slot, scope),
+    mutationFn: () => reschedule(scheduleId, slot, scope, overwrite),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["schedules"] });
       qc.invalidateQueries({ queryKey: ["calendar"] });
@@ -62,7 +66,21 @@ export default function Remarcar() {
         <label className="block text-sm text-gray-400">
           Novo horário {slot && <span className="text-brand">— {new Date(slot).toLocaleString("pt-BR")}</span>}
         </label>
-        <WeeklySlots slots={slots} selected={slot} onSelect={setSlot} parties={parties} />
+        <WeeklySlots slots={slots} selected={slot} onSelect={setSlot} parties={otherParties} allowOccupied={overwrite} />
+
+        {/* Sobrescrever outra PT */}
+        <label className="flex items-center gap-2 text-sm bg-gray-800/60 rounded px-3 py-2 cursor-pointer w-fit">
+          <input
+            type="checkbox"
+            checked={overwrite}
+            onChange={(e) => setOverwrite(e.target.checked)}
+            className="accent-orange-500"
+          />
+          <span>
+            Permitir sobrescrever <strong>outra PT</strong>
+            <span className="text-gray-500"> — libera os horários já ocupados na grade (duas PTs no mesmo horário)</span>
+          </span>
+        </label>
 
         <button
           onClick={() => doReschedule.mutate()}

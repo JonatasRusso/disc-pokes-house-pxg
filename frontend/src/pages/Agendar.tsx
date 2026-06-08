@@ -15,7 +15,7 @@ export default function Agendar() {
   const qc       = useQueryClient();
 
   const { data: characters = [] } = useQuery({ queryKey: ["characters"], queryFn: getCharacters });
-  const { data: slots      = [] } = useQuery({ queryKey: ["free-slots"], queryFn: getFreeSlots });
+  const { data: slots      = [] } = useQuery({ queryKey: ["free-slots"], queryFn: () => getFreeSlots() });
   const { data: members    = [] } = useQuery({ queryKey: ["members"],    queryFn: getMembers });
   const { data: parties    = [] } = useQuery({ queryKey: ["calendar"],   queryFn: getCalendar });
 
