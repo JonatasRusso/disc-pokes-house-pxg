@@ -21,7 +21,8 @@ Cada arquivo é um `APIRouter` registrado em `api/main.py`. Prefixo entre parên
 ## `schedules.py` — `/schedules` (núcleo das PTs)
 **Helpers:**
 - `next_occurrence(weekday, hour, after)` — próxima data futura com aquele dia-da-semana/hora (recorrência semanal).
-- `_busy_weekday_hours(db)` / `_conflicts(weekday, hour, busy)` — conflito de horário: marcar trava o horário **+ as 2 horas posteriores**.
+- `_busy_weekday_hours(db, exclude=None)` / `_conflicts(weekday, hour, busy)` — conflito de horário: marcar trava o horário **+ as 2 horas posteriores**. `exclude` ignora um schedule (libera o slot da própria PT ao remarcar).
+- `ROLE_CAPACITY` — composição da PT: `{TANK:1, DPS:2, SUP:1}`.
 - `_occupied_character_ids(db)` — personagens já em PT ativa (regra 1 PT por personagem).
 - `_party_members_map(db, party_ids)` — membros por party (nick, role, character, is_coleader).
 - `_my_membership(db, schedule, user_id)` / `_can_manage(db, schedule, user)` — permissão (líder/co-líder/admin).
@@ -31,9 +32,10 @@ Cada arquivo é um `APIRouter` registrado em `api/main.py`. Prefixo entre parên
 **Rotas:**
 - `GET ""` (`list_schedules`) — PTs onde o usuário é membro **ou** organizador; inclui members (com `confirmed`), `is_member`, `is_leader`, `can_manage`.
 - `GET /calendar` — todas as PTs ativas com membros (para o calendário).
-- `GET /free-slots` — grade semanal: cada hora (00:00–23:00) dos próximos 7 dias com flag `free` (sem trava de horário passado; recorrente).
+- `GET /free-slots` — grade semanal: cada hora (00:00–23:00) dos próximos 7 dias com flag `free` (sem trava de horário passado; recorrente). Query `exclude={id}` ignora uma PT (libera o slot dela ao remarcar).
 - `POST ""` (`create_schedule`) — cria PT recorrente; `include_self=false` (admin) cria sem participar; enfileira convites na `outbox`.
-- `PATCH /{id}/reschedule` — remarca (líder/co-líder/admin); reseta confirmações e avisa os demais membros (outbox `party_rescheduled`). Body `scope`: `"once"` (padrão — só esta semana, grava `override_start/end`) ou `"all"` (redefine o slot fixo e limpa override). Conflito do `once` é por ocorrência efetiva real; o `all` usa a grade semanal.
+- `PATCH /{id}/reschedule` — remarca (líder/co-líder/admin); reseta confirmações e avisa os demais membros (outbox `party_rescheduled`). Body `scope`: `"once"` (padrão — só esta semana, grava `override_start/end`) ou `"all"` (redefine o slot fixo e limpa override). Conflito do `once` é por ocorrência efetiva real; o `all` usa a grade semanal — ambos ignoram a própria PT. Body `force=true` ignora conflito com OUTRA PT (sobrescreve mesmo ocupado).
+- `POST /{id}/add-member` — líder/co-líder/admin adiciona membro a uma PT incompleta; valida a composição (`ROLE_CAPACITY`), cria `PartyMember` + confirmação pendente e convida no Discord (outbox `party_invite`).
 - `POST /{id}/confirm` — membro confirma presença.
 - `POST /{id}/leave` — membro sai; cancela a PT se esvaziar; avisa os demais (outbox).
 - `PATCH /{id}/my-character` — membro define seu personagem na PT.

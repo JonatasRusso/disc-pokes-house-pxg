@@ -36,6 +36,8 @@ def _summary(h: History, d: dict, name, poke_name) -> str:
             return f"{a} cancelou a PT #{h.entity_id}"
         if h.action == "admin_edited":
             return f"{a} editou a PT #{h.entity_id}"
+        if h.action == "member_added":
+            return f"{a} adicionou {name(d.get('member'))} ({d.get('role', '')}) na PT #{h.entity_id}"
     return f"{a} — {h.action}"
 
 
@@ -65,7 +67,7 @@ async def get_history(
         parsed.append(d)
         if h.actor_id:
             user_ids.add(h.actor_id)
-        for k in ("target", "from", "to"):
+        for k in ("target", "from", "to", "member"):
             if d.get(k):
                 user_ids.add(d[k])
         if h.entity_type == "pokemon" and h.entity_id:
