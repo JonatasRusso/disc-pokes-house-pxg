@@ -74,6 +74,15 @@ async def _occupied_character_ids(db: AsyncSession) -> set[int]:
 
 class RescheduleIn(BaseModel):
     new_start: datetime
+    scope: str = "once"   # "once" = só esta semana (override) | "all" = redefine o slot fixo
+
+
+def _eff_start(s: Schedule) -> datetime:
+    return s.override_start or s.start_time
+
+
+def _eff_end(s: Schedule) -> datetime:
+    return s.override_end or s.end_time
 
 
 async def _party_members_map(db: AsyncSession, party_ids: list[int]) -> dict[int, list[dict]]:
@@ -155,9 +164,10 @@ async def calendar(user: User = Depends(get_current_user), db: AsyncSession = De
     mmap = await _party_members_map(db, [s.party_id for s in schedules])
     return [{
         "schedule_id": s.id,
-        "weekday":     s.start_time.weekday(),
+        "weekday":     s.start_time.weekday(),  # slot fixo recorrente
         "hour":        s.start_time.hour,
         "difficulty":  s.difficulty,
+        "is_override": s.override_start is not None,  # esta semana está remarcada
         "members":     mmap.get(s.party_id, []),
     } for s in schedules]
 
@@ -302,20 +312,43 @@ async def reschedule(schedule_id: int, body: RescheduleIn, user: User = Depends(
     schedule = await db.get(Schedule, schedule_id)
     if not schedule:
         raise HTTPException(404, "Horário não encontrado")
+    if body.scope not in ("once", "all"):
+        raise HTTPException(400, "scope inválido (use 'once' ou 'all').")
 
     # Líder, co-líder ou admin podem remarcar
     if not await _can_manage(db, schedule, user):
         raise HTTPException(403, "Apenas líder/co-líder podem remarcar a PT.")
 
     new_start = next_occurrence(body.new_start.weekday(), body.new_start.hour, now_local())
-    # Evita conflito com outras PTs (ignora a própria)
-    busy = [(wd, h) for (wd, h) in await _busy_weekday_hours(db)
-            if not (wd == schedule.start_time.weekday() and h == schedule.start_time.hour)]
-    if _conflicts(new_start.weekday(), new_start.hour, busy):
-        raise HTTPException(400, "Já existe uma PT nesse horário semanal.")
-    schedule.start_time = new_start
-    schedule.end_time   = new_start + timedelta(hours=3)
-    schedule.status     = "rescheduled"
+    new_end   = new_start + timedelta(hours=3)
+
+    if body.scope == "all":
+        # Redefine o slot fixo recorrente. Conflito na grade semanal (ignora a própria PT).
+        busy = [(wd, h) for (wd, h) in await _busy_weekday_hours(db)
+                if not (wd == schedule.start_time.weekday() and h == schedule.start_time.hour)]
+        if _conflicts(new_start.weekday(), new_start.hour, busy):
+            raise HTTPException(400, "Já existe uma PT nesse horário semanal.")
+        schedule.start_time     = new_start
+        schedule.end_time       = new_end
+        schedule.override_start = None   # redefinir o fixo cancela qualquer remarcação de 1 semana
+        schedule.override_end   = None
+    else:
+        # Remarca só esta semana: grava o override e mantém o slot fixo.
+        # Conflito por ocorrência efetiva real das outras PTs ativas (não pela grade semanal,
+        # que marcaria falso conflito num slot ocupado apenas nas OUTRAS semanas).
+        others = (await db.execute(
+            select(Schedule).where(
+                Schedule.status.in_(ACTIVE_STATUSES),
+                Schedule.id != schedule_id,
+            )
+        )).scalars().all()
+        for o in others:
+            if new_start < _eff_end(o) and _eff_start(o) < new_end:
+                raise HTTPException(400, "Já existe uma PT nesse horário.")
+        schedule.override_start = new_start
+        schedule.override_end   = new_end
+
+    schedule.status = "rescheduled"
 
     # Reseta confirmações
     confs = await db.execute(
@@ -325,12 +358,28 @@ async def reschedule(schedule_id: int, body: RescheduleIn, user: User = Depends(
         conf.confirmed = False
         conf.last_ping = None
 
+    # Avisa os demais membros no Discord (texto diferente por modo)
+    members = (await db.execute(
+        select(PartyMember).where(PartyMember.party_id == schedule.party_id)
+    )).scalars().all()
+    for m in members:
+        if m.user_id == user.discord_id:
+            continue
+        db.add(Outbox(kind="party_rescheduled", target_user_id=m.user_id, payload=json.dumps({
+            "who":         user.nick or user.username,
+            "schedule_id": schedule_id,
+            "scope":       body.scope,
+            "new_start":   new_start.isoformat(),
+            "difficulty":  schedule.difficulty,
+            "link":        f"{SITE_URL}/minhas-pts",
+        })))
+
     db.add(History(
         actor_id=user.discord_id,
         entity_type="schedule",
         entity_id=schedule_id,
         action="rescheduled",
-        detail=f'{{"new_start":"{new_start.isoformat()}"}}',
+        detail=f'{{"new_start":"{new_start.isoformat()}","scope":"{body.scope}"}}',
     ))
     await db.commit()
     return _schedule_dict(schedule)
@@ -548,10 +597,14 @@ def _schedule_dict(s: Schedule) -> dict:
         "id":         s.id,
         "party_id":   s.party_id,
         "difficulty": s.difficulty,
-        "start_time":   s.start_time.isoformat(),
-        "end_time":     s.end_time.isoformat(),
+        # start_time/end_time = ocorrência EFETIVA (com override aplicado, se houver)
+        "start_time":   _eff_start(s).isoformat(),
+        "end_time":     _eff_end(s).isoformat(),
+        # weekday/hour = slot FIXO recorrente (sempre o base, ignora override)
         "weekday":      s.start_time.weekday(),  # 0=Seg .. 6=Dom
         "hour":         s.start_time.hour,
+        "is_override":     s.override_start is not None,  # remarcada só esta semana
+        "override_start":  s.override_start.isoformat() if s.override_start else None,
         "organizer_id": s.organizer_id,
         "status":       s.status,
     }

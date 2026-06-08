@@ -32,7 +32,7 @@ class ScheduleCog(commands.Cog):
                 .join(PartyMember, PartyMember.party_id == Party.id)
                 .where(
                     PartyMember.user_id == user_id,
-                    Schedule.status.in_(["pending", "confirmed"]),
+                    Schedule.status.in_(["pending", "confirmed", "rescheduled"]),
                 )
                 .order_by(Schedule.start_time)
                 .limit(5)
@@ -45,9 +45,12 @@ class ScheduleCog(commands.Cog):
 
         embed = discord.Embed(title="📋 Seus Horários", color=discord.Color.green())
         for s in schedules:
+            eff_start = s.override_start or s.start_time
+            eff_end   = s.override_end or s.end_time
+            extra = "\n📌 Remarcada só esta semana (volta ao normal depois)" if s.override_start else ""
             embed.add_field(
                 name=f"ID #{s.id} — {s.difficulty}",
-                value=f"🕐 {s.start_time.strftime('%d/%m/%Y %H:%M')} → {s.end_time.strftime('%H:%M')}\nStatus: `{s.status}`",
+                value=f"🕐 {eff_start.strftime('%d/%m/%Y %H:%M')} → {eff_end.strftime('%H:%M')}\nStatus: `{s.status}`{extra}",
                 inline=False,
             )
         await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -55,17 +58,23 @@ class ScheduleCog(commands.Cog):
     @app_commands.command(name="nao-posso", description="Avisar que não pode comparecer e remarcar")
     @app_commands.describe(id="ID do horário (use /meus-horarios para ver)")
     async def nao_posso(self, interaction: discord.Interaction, id: int):
-        url = f"{SITE_URL}/remarcar/{id}"
+        once_url = f"{SITE_URL}/remarcar/{id}?scope=once"
+        all_url  = f"{SITE_URL}/remarcar/{id}?scope=all"
         embed = discord.Embed(
             title="❌ Remarcar Horário",
             description=(
-                f"Clique no link para escolher um novo horário no site:\n\n"
-                f"**[Remarcar horário #{id}]({url})**\n\n"
-                "Os outros membros da PT serão notificados automaticamente."
+                f"Como você quer remarcar a PT **#{id}**?\n\n"
+                f"📅 **Só esta semana** — move apenas a próxima ocorrência; "
+                f"na semana seguinte volta ao horário de sempre.\n"
+                f"🔁 **Todas as semanas** — muda o horário fixo da PT a partir de agora.\n\n"
+                f"Você escolhe o novo horário no site. Os outros membros são avisados automaticamente."
             ),
             color=discord.Color.orange(),
         )
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        view = discord.ui.View()
+        view.add_item(discord.ui.Button(label="📅 Só esta semana", style=discord.ButtonStyle.link, url=once_url))
+        view.add_item(discord.ui.Button(label="🔁 Todas as semanas", style=discord.ButtonStyle.link, url=all_url))
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
 
 async def setup(bot: commands.Bot):

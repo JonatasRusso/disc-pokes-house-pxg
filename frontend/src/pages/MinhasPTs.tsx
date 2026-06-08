@@ -71,7 +71,14 @@ function PTCard({ schedule: s, myId }: { schedule: Schedule; myId: string }) {
           <p className="text-gray-400 text-sm">
             🔁 Toda <strong>{WEEKDAY_LABEL[s.weekday]}</strong> {String(s.hour).padStart(2, "0")}:00 → {String((s.hour + 3) % 24).padStart(2, "0")}:00
           </p>
-          <p className="text-gray-600 text-xs">Próxima: {new Date(s.start_time).toLocaleDateString("pt-BR")}</p>
+          {s.is_override ? (
+            <p className="text-amber-400 text-xs">
+              📌 Esta semana: <strong>{new Date(s.start_time).toLocaleString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</strong>
+              <span className="text-gray-500"> — volta ao normal depois</span>
+            </p>
+          ) : (
+            <p className="text-gray-600 text-xs">Próxima: {new Date(s.start_time).toLocaleDateString("pt-BR")}</p>
+          )}
         </div>
         <div className="ml-auto flex gap-3 text-sm">
           {s.can_manage && <Link to={`/remarcar/${s.id}`} className="text-gray-400 hover:text-orange-400">Remarcar</Link>}

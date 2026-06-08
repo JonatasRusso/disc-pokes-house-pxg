@@ -37,8 +37,10 @@ CREATE TABLE IF NOT EXISTS schedules (
     character_id INTEGER REFERENCES characters(id) ON DELETE SET NULL,  -- NULL = PT organizada por admin sem se incluir
     organizer_id TEXT REFERENCES users(discord_id) ON DELETE SET NULL,  -- quem criou a PT
     difficulty   TEXT NOT NULL CHECK(difficulty IN ('HARD','NW')),
-    start_time   TEXT NOT NULL,   -- ISO-8601
+    start_time   TEXT NOT NULL,   -- ISO-8601 — slot FIXO recorrente (dia-da-semana/hora)
     end_time     TEXT NOT NULL,   -- start_time + 3h
+    override_start TEXT,          -- remarcação só desta semana (NULL = sem override); ocorrência efetiva
+    override_end   TEXT,          -- override_start + 3h
     status       TEXT NOT NULL DEFAULT 'pending'
                       CHECK(status IN ('pending','confirmed','rescheduled','missed','cancelled'))
 );
