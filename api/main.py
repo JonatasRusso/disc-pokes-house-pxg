@@ -1,3 +1,4 @@
+import asyncio
 import os
 import time
 from contextlib import asynccontextmanager
@@ -58,6 +59,23 @@ def _api_memory_mb():
         return None
 
 
+async def _resources():
+    """CPU e disco do container. cpu_percent bloqueia 0.5s → roda em thread p/ não travar o loop."""
+    if psutil is None:
+        return None
+    try:
+        cpu = await asyncio.to_thread(psutil.cpu_percent, 0.5)
+        disk = psutil.disk_usage("/")
+        return {
+            "cpu_percent": cpu,
+            "disk_used_gb": round(disk.used / 1024 ** 3, 2),
+            "disk_total_gb": round(disk.total / 1024 ** 3, 2),
+            "disk_percent": disk.percent,
+        }
+    except Exception:
+        return None
+
+
 @app.get("/health")
 async def health():
     now = now_local()
@@ -104,5 +122,6 @@ async def health():
         },
         "db": {"connected": db_connected, "latency_ms": db_latency_ms},
         "discord": discord_block,
+        "resources": await _resources(),
         "env_ok": env_ok,
     }
