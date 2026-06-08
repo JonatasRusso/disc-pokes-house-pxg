@@ -25,14 +25,15 @@ Cada arquivo é um `APIRouter` registrado em `api/main.py`. Prefixo entre parên
 - `_occupied_character_ids(db)` — personagens já em PT ativa (regra 1 PT por personagem).
 - `_party_members_map(db, party_ids)` — membros por party (nick, role, character, is_coleader).
 - `_my_membership(db, schedule, user_id)` / `_can_manage(db, schedule, user)` — permissão (líder/co-líder/admin).
-- `_schedule_dict(s)` — serializa schedule (inclui weekday/hour/organizer_id).
+- `_eff_start(s)` / `_eff_end(s)` — ocorrência **efetiva** (`override_start/end` se houver, senão o slot fixo).
+- `_schedule_dict(s)` — serializa schedule. `start_time/end_time` = ocorrência efetiva; `weekday/hour` = slot fixo recorrente; `is_override`/`override_start` indicam remarcação só desta semana.
 
 **Rotas:**
 - `GET ""` (`list_schedules`) — PTs onde o usuário é membro **ou** organizador; inclui members (com `confirmed`), `is_member`, `is_leader`, `can_manage`.
 - `GET /calendar` — todas as PTs ativas com membros (para o calendário).
 - `GET /free-slots` — grade semanal: cada hora (00:00–23:00) dos próximos 7 dias com flag `free` (sem trava de horário passado; recorrente).
 - `POST ""` (`create_schedule`) — cria PT recorrente; `include_self=false` (admin) cria sem participar; enfileira convites na `outbox`.
-- `PATCH /{id}/reschedule` — remarca (líder/co-líder/admin); reseta confirmações.
+- `PATCH /{id}/reschedule` — remarca (líder/co-líder/admin); reseta confirmações e avisa os demais membros (outbox `party_rescheduled`). Body `scope`: `"once"` (padrão — só esta semana, grava `override_start/end`) ou `"all"` (redefine o slot fixo e limpa override). Conflito do `once` é por ocorrência efetiva real; o `all` usa a grade semanal.
 - `POST /{id}/confirm` — membro confirma presença.
 - `POST /{id}/leave` — membro sai; cancela a PT se esvaziar; avisa os demais (outbox).
 - `PATCH /{id}/my-character` — membro define seu personagem na PT.

@@ -20,7 +20,7 @@ Camada de dados/HTTP usada pela **API** e importada também pelo **bot** (models
 - **`get_db()`** — dependência FastAPI que injeta uma sessão.
 
 ### `models.py` — Modelos SQLAlchemy (tabelas)
-- `User` (discord_id PK, is_admin, **notify_lead_minutes**, nick), `Character`, `Party`, `PartyMember` (role, character_id, **is_coleader**), `Schedule` (start/end_time, status, organizer_id, character_id), `ScheduleConfirmation` (confirmed, last_ping), `Pokemon` (category A/B/C, assigned_to, **panel_message_id**), `History` (log de ações), `Outbox` (fila API→bot), **`BotHeartbeat`** (estado do bot p/ `/health`).
+- `User` (discord_id PK, is_admin, **notify_lead_minutes**, nick), `Character`, `Party`, `PartyMember` (role, character_id, **is_coleader**), `Schedule` (start/end_time = slot fixo, **override_start/end** = remarcação só desta semana, status, organizer_id, character_id), `ScheduleConfirmation` (confirmed, last_ping), `Pokemon` (category A/B/C, assigned_to, **panel_message_id**), `History` (log de ações), `Outbox` (fila API→bot), **`BotHeartbeat`** (estado do bot p/ `/health`).
 - Defaults de timestamp usam `now_local` (fuso da comunidade).
 
 ### `auth.py` — Autenticação (JWT + Discord OAuth)

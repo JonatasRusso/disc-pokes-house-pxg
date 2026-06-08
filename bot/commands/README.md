@@ -8,7 +8,7 @@ Cada arquivo é um Cog carregado em `bot/main.py` (`COGS`). Cada um expõe `setu
 Comandos que apontam para o site (a gestão real é no front):
 - **`/agendar`** — manda link do formulário de agendamento.
 - **`/meus-horarios`** — lista as próximas PTs do usuário (consulta o banco).
-- **`/nao-posso [id]`** — manda link para remarcar a PT no site.
+- **`/nao-posso [id]`** — mostra 2 botões de link para remarcar no site: **📅 Só esta semana** (`?scope=once`) e **🔁 Todas as semanas** (`?scope=all`).
 
 ## `pokemon.py` — `PokemonCog`
 **Helpers:**

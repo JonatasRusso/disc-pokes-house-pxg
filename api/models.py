@@ -78,8 +78,12 @@ class Schedule(Base):
     character_id = Column(Integer, ForeignKey("characters.id", ondelete="SET NULL"))  # NULL = PT organizada por admin sem se incluir
     organizer_id = Column(String, ForeignKey("users.discord_id", ondelete="SET NULL"))  # quem criou a PT
     difficulty   = Column(String, nullable=False)
-    start_time   = Column(DateTime, nullable=False)
+    start_time   = Column(DateTime, nullable=False)   # slot FIXO recorrente (dia-da-semana/hora)
     end_time     = Column(DateTime, nullable=False)
+    # Remarcação só desta semana: ocorrência efetiva única. NULL = sem override (usa start_time/end_time).
+    # O rollover limpa o override ao fim da ocorrência → semana seguinte volta ao slot fixo.
+    override_start = Column(DateTime)
+    override_end   = Column(DateTime)
     status       = Column(String, nullable=False, default="pending")
 
     party         = relationship("Party", back_populates="schedules")

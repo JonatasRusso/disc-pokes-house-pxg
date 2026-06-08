@@ -25,8 +25,9 @@ Processo separado da API (`python -m bot.main`). Compartilha o banco com a API (
 - `_send_warning(...)` — monta/envia o embed do aviso (com reação ✅) e devolve a mensagem.
 - `_delete_warn(channel, key)` — apaga a mensagem de aviso atual.
 - **`handle_confirmation(bot, payload)`** — reação ✅ confirma presença e apaga o aviso.
-- **`_process_outbox(bot)`** — envia itens da `outbox` (`_send_party_invite`, `_send_party_left`); abandona itens com >15 min sem enviar (ex: bot sem permissão).
-- **`_rollover_recurring()`** — avança PTs terminadas +7 dias (recorrência) e reseta confirmações.
+- **`_process_outbox(bot)`** — envia itens da `outbox` (`_send_party_invite`, `_send_party_left`, `_send_party_rescheduled`); abandona itens com >15 min sem enviar (ex: bot sem permissão).
+- **`_rollover_recurring()`** — avança PTs cuja ocorrência **efetiva** terminou +7 dias (recorrência) e reseta confirmações. Uma remarcação de 1 semana (`override_start/end`) é consumida aqui: limpa o override e pula o slot fixo desta semana, voltando ao normal na próxima.
+- **`_eff_start(s)` / `_eff_end(s)`** — ocorrência efetiva (override de 1 semana, se houver). Usadas na janela de checagem, no rollover e na chave `iso` dos avisos.
 - **`_pokemon_pt_reminder(...)`** — quando a PT entra na janela de 30 min, marca os membros no canal de cada função listando pokémons livres (1x por ocorrência).
 - Constantes: `ROLE_TO_CAT`, `CAT_LABEL`, `OUTBOX_GIVEUP`.
 

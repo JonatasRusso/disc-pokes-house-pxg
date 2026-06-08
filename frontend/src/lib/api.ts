@@ -36,8 +36,8 @@ export const getFreeSlots = () => req<Slot[]>("/schedules/free-slots");
 export const getCalendar  = () => req<CalendarParty[]>("/schedules/calendar");
 export const createSchedule = (body: ScheduleIn) =>
   req<Schedule>("/schedules", { method: "POST", body: JSON.stringify(body) });
-export const reschedule = (id: number, new_start: string) =>
-  req<Schedule>(`/schedules/${id}/reschedule`, { method: "PATCH", body: JSON.stringify({ new_start }) });
+export const reschedule = (id: number, new_start: string, scope: "once" | "all" = "once") =>
+  req<Schedule>(`/schedules/${id}/reschedule`, { method: "PATCH", body: JSON.stringify({ new_start, scope }) });
 export const cancelSchedule = (id: number) =>
   req<{ ok: boolean }>(`/schedules/${id}`, { method: "DELETE" });
 export const confirmPresence = (id: number) =>
@@ -101,8 +101,10 @@ export interface Schedule {
   difficulty: "HARD" | "NW";
   start_time: string;
   end_time: string;
-  weekday: number;  // 0=Seg .. 6=Dom
+  weekday: number;  // 0=Seg .. 6=Dom — slot FIXO recorrente
   hour: number;
+  is_override?: boolean;          // remarcada só esta semana
+  override_start?: string | null; // ocorrência efetiva desta semana (quando is_override)
   organizer_id: string | null;
   status: "pending" | "confirmed" | "rescheduled" | "missed" | "cancelled";
   members: ScheduleMember[];
@@ -125,6 +127,7 @@ export interface CalendarParty {
   weekday: number;
   hour: number;
   difficulty: "HARD" | "NW";
+  is_override?: boolean;
   members: ScheduleMember[];
 }
 

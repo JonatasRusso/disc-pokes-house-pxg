@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 
 import discord
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from api.database import AsyncSessionLocal
 from api.models import Outbox, Pokemon, Schedule, ScheduleConfirmation, PartyMember, User
@@ -28,6 +28,15 @@ _poke_reminded: dict[int, str] = {}
 
 ROLE_TO_CAT  = {"TANK": "A", "DPS": "B", "SUP": "C"}
 CAT_LABEL    = {"A": "Tank", "B": "DPS", "C": "Sup"}
+
+
+def _eff_start(s: Schedule) -> datetime:
+    """Início efetivo da próxima ocorrência (override de 1 semana, se houver)."""
+    return s.override_start or s.start_time
+
+
+def _eff_end(s: Schedule) -> datetime:
+    return s.override_end or s.end_time
 
 
 def start_scheduler(bot: discord.Client):
@@ -74,6 +83,8 @@ async def _process_outbox(bot: discord.Client):
                     await _send_party_invite(channel, item)
                 elif item.kind == "party_left":
                     await _send_party_left(channel, item)
+                elif item.kind == "party_rescheduled":
+                    await _send_party_rescheduled(channel, item)
                 item.sent_at = now
             except Exception as e:
                 age = now - (item.created_at or now)
@@ -136,20 +147,69 @@ async def _send_party_left(channel: discord.TextChannel, item: Outbox):
     )
 
 
+async def _send_party_rescheduled(channel: discord.TextChannel, item: Outbox):
+    data = json.loads(item.payload or "{}")
+    who      = data.get("who", "Alguém")
+    sid      = data.get("schedule_id")
+    scope    = data.get("scope", "once")
+    diff     = data.get("difficulty", "")
+    link     = data.get("link", SITE_URL)
+    new_iso  = data.get("new_start")
+    try:
+        when = datetime.fromisoformat(new_iso).strftime("%d/%m %H:%M") if new_iso else "novo horário"
+    except (ValueError, TypeError):
+        when = "novo horário"
+
+    if scope == "once":
+        title = "📅 PT remarcada — só esta semana"
+        desc = (
+            f"<@{item.target_user_id}>, **{who}** remarcou a PT 💀 **{diff}** (#{sid}) "
+            f"**desta semana** para `{when}`.\n"
+            f"Na próxima semana volta ao horário de sempre.\n"
+            f"➡️ Confirme presença no site: {link}"
+        )
+        color = discord.Color.blue()
+    else:
+        title = "🔁 Horário fixo da PT alterado"
+        desc = (
+            f"<@{item.target_user_id}>, **{who}** mudou o horário fixo da PT 💀 **{diff}** (#{sid}) "
+            f"para `{when}` — valendo a partir de agora.\n"
+            f"➡️ Confirme presença no site: {link}"
+        )
+        color = discord.Color.purple()
+
+    embed = discord.Embed(title=title, description=desc, color=color)
+    await channel.send(
+        content=f"<@{item.target_user_id}>",
+        embed=embed,
+        allowed_mentions=discord.AllowedMentions(users=True),
+    )
+
+
 async def _rollover_recurring():
-    """Recorrência semanal: parties que já terminaram avançam para a próxima semana."""
+    """Recorrência semanal: parties cuja ocorrência efetiva já terminou avançam para a
+    próxima semana. Uma remarcação de 1 semana (override) é consumida aqui — limpa o
+    override e pula o slot fixo desta semana, voltando ao normal na próxima."""
     now = now_local()
     async with AsyncSessionLocal() as db:
         result = await db.execute(
             select(Schedule).where(
                 Schedule.status.in_(["pending", "confirmed", "rescheduled"]),
-                Schedule.end_time < now,
             )
         )
         rolled = 0
         for s in result.scalars().all():
-            # Avança em blocos de 7 dias até a próxima ocorrência futura
-            while s.end_time < now:
+            if _eff_end(s) >= now:
+                continue  # ocorrência efetiva ainda não terminou
+            # Consome o ciclo. Se tinha override, a ocorrência base desta semana fica
+            # suprimida → avança o slot fixo ao menos uma semana.
+            had_override = s.override_start is not None
+            s.override_start = None
+            s.override_end   = None
+            if had_override:
+                s.start_time += timedelta(days=7)
+                s.end_time   += timedelta(days=7)
+            while s.start_time <= now:  # cobre bot fora do ar por vários dias
                 s.start_time += timedelta(days=7)
                 s.end_time   += timedelta(days=7)
             s.status = "pending"
@@ -175,12 +235,13 @@ async def _check_schedules(bot: discord.Client):
 
     seen_keys: set[tuple[int, str]] = set()
     async with AsyncSessionLocal() as db:
-        # Schedules ativos que começam em até 24h ou começaram há até 30 min
+        # Schedules ativos cuja ocorrência efetiva começa em até 24h ou começou há até 30 min
+        eff = func.coalesce(Schedule.override_start, Schedule.start_time)
         result = await db.execute(
             select(Schedule).where(
                 Schedule.status.in_(["pending", "confirmed", "rescheduled"]),
-                Schedule.start_time <= now + timedelta(hours=24),
-                Schedule.start_time >= now - timedelta(minutes=30),
+                eff <= now + timedelta(hours=24),
+                eff >= now - timedelta(minutes=30),
             )
         )
         schedules = result.scalars().all()
@@ -190,8 +251,8 @@ async def _check_schedules(bot: discord.Client):
                 select(PartyMember).where(PartyMember.party_id == schedule.party_id)
             )).scalars().all()
 
-            sched_secs = (schedule.start_time - now).total_seconds()
-            iso = schedule.start_time.isoformat()
+            sched_secs = (_eff_start(schedule) - now).total_seconds()
+            iso = _eff_start(schedule).isoformat()
 
             # Lembrete de pokémons quando entra na janela de 30 min
             if 0 <= sched_secs <= 30 * 60:
@@ -267,7 +328,7 @@ async def _check_schedules(bot: discord.Client):
 async def _pokemon_pt_reminder(bot: discord.Client, db, schedule: Schedule, members: list):
     """Quando a PT entra na janela de 30 min, lembra os membros (1x por ocorrência).
     Posta no canal de cada função presente na PT (Tank/DPS/Sup)."""
-    iso = schedule.start_time.isoformat()
+    iso = _eff_start(schedule).isoformat()
     if _poke_reminded.get(schedule.id) == iso:
         return
 

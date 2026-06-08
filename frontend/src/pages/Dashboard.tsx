@@ -46,6 +46,9 @@ export default function Dashboard() {
                   <span className="text-gray-400 text-sm">
                     🔁 {WEEKDAY_LABEL[s.weekday]} {String(s.hour).padStart(2, "0")}:00
                   </span>
+                  {s.is_override && (
+                    <span className="text-amber-400 text-xs" title="Remarcada só esta semana">📌 esta semana</span>
+                  )}
                   <span className="ml-auto text-xs text-gray-500">
                     {confirmed}/{s.members.length} confirmados
                   </span>

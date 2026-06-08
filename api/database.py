@@ -21,6 +21,8 @@ _MIGRATIONS = [
     "ALTER TABLE pokemon ADD COLUMN IF NOT EXISTS panel_message_id TEXT",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS notify_lead_minutes INTEGER DEFAULT 30",
     "ALTER TABLE party_members ADD COLUMN IF NOT EXISTS is_coleader BOOLEAN DEFAULT FALSE",
+    "ALTER TABLE schedules ADD COLUMN IF NOT EXISTS override_start TIMESTAMP",  # remarcação só desta semana
+    "ALTER TABLE schedules ADD COLUMN IF NOT EXISTS override_end TIMESTAMP",
 ]
 
 
