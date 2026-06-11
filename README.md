@@ -35,6 +35,7 @@ Discord  ←→  Railway (2 processos no mesmo container)  ←→  Vercel (front
 | `bot/commands/` | Slash commands |
 | `bot/events/` | Listeners de eventos (reações) |
 | `db/` | `schema.sql` de referência |
+| `monitoring/` | Stack Prometheus + Grafana + postgres_exporter (status do banco) |
 | `frontend/` | App React (Vite) |
 | `frontend/src/` | Código-fonte do front |
 | `frontend/src/pages/` | Páginas/rotas |
@@ -52,3 +53,5 @@ Discord  ←→  Railway (2 processos no mesmo container)  ←→  Vercel (front
 - **Fuso horário:** horários são interpretados no fuso da comunidade via `api/timeutil.now_local()` (offset `APP_UTC_OFFSET`, padrão -3). **Nunca usar `datetime.utcnow()`** para comparar horários de PT.
 - **Papéis:** organizador (líder) → pode promover co-líderes; líder/co-líder/admin gerenciam a PT.
 - **Pokémon categorias:** `A`=Tank, `B`=DPS, `C`=Sup (armazenadas como A/B/C, exibidas como Tank/DPS/Sup).
+- **Auto-marcação:** no início do horário da PT, o bot marca automaticamente os pokémons livres da função de cada membro (rodízio), re-renderiza o painel e avisa — a pessoa não precisa reagir 🎯. Externos usam pokémon próprio.
+- **Observabilidade:** API expõe `/metrics` (Prometheus); stack de Grafana/Prometheus em `monitoring/`.

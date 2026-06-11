@@ -13,9 +13,10 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy import func, select
 
 from api.database import AsyncSessionLocal
-from api.models import Outbox, Pokemon, Schedule, ScheduleConfirmation, PartyMember, User
+from api.models import History, Outbox, Pokemon, Schedule, ScheduleConfirmation, PartyMember, User
 from api.timeutil import now_local
 from bot.config import DISCORD_NOTIFY_CHANNEL_ID, POKEMON_CHANNELS, SITE_URL
+from bot.commands.pokemon import build_pokemon_embed
 
 log = logging.getLogger(__name__)
 
@@ -273,9 +274,9 @@ async def _check_schedules(bot: discord.Client):
             sched_secs = (_eff_start(schedule) - now).total_seconds()
             iso = _eff_start(schedule).isoformat()
 
-            # Lembrete de pokémons quando entra na janela de 30 min
-            if 0 <= sched_secs <= 30 * 60:
-                await _pokemon_pt_reminder(bot, db, schedule, members)
+            # Auto-marca os pokémons no início do horário da PT (a pessoa não precisa marcar)
+            if sched_secs <= 0:
+                await _pokemon_auto_assign(bot, db, schedule, members)
 
             for member in members:
                 key = (schedule.id, member.user_id)
@@ -345,46 +346,88 @@ async def _check_schedules(bot: discord.Client):
         _warn_state.pop(k, None)
 
 
-async def _pokemon_pt_reminder(bot: discord.Client, db, schedule: Schedule, members: list):
-    """Quando a PT entra na janela de 30 min, lembra os membros (1x por ocorrência).
-    Posta no canal de cada função presente na PT (Tank/DPS/Sup)."""
+async def _rerender_pokemon(bot: discord.Client, pokemon: Pokemon):
+    """Atualiza o card do pokémon no painel para refletir o dono atual."""
+    cid = POKEMON_CHANNELS.get(pokemon.category)
+    channel = bot.get_channel(cid) if cid else None
+    if not channel or not pokemon.panel_message_id:
+        return
+    try:
+        msg = channel.get_partial_message(int(pokemon.panel_message_id))
+        await msg.edit(embed=build_pokemon_embed(pokemon, channel.guild))
+    except Exception:
+        pass
+
+
+async def _pokemon_auto_assign(bot: discord.Client, db, schedule: Schedule, members: list):
+    """No início do horário da PT, marca automaticamente os pokémons LIVRES da função de
+    cada membro (a pessoa não precisa marcar — já é pra estar com ela). Distribui em rodízio
+    entre os membros da mesma função. Externos usam pokémon próprio — são ignorados.
+    Roda 1x por ocorrência."""
     iso = _eff_start(schedule).isoformat()
     if _poke_reminded.get(schedule.id) == iso:
         return
 
-    free = (await db.execute(select(Pokemon).where(Pokemon.assigned_to.is_(None)))).scalars().all()
+    non_ext = [m for m in members if not m.is_external]
+    member_ids = {m.user_id for m in non_ext}
+    if not member_ids:
+        return
 
-    sent_any = False
+    touched: dict[int, Pokemon] = {}  # pokémons a re-renderizar (deduplicados por id)
+
+    # Libera o que estes membros tinham (da ocorrência anterior) para redistribuir do zero
+    held = (await db.execute(select(Pokemon).where(Pokemon.assigned_to.in_(member_ids)))).scalars().all()
+    for p in held:
+        p.assigned_to = None
+        p.assigned_at = None
+        touched[p.id] = p
+    await db.flush()
+
+    assigned: dict[str, list[tuple]] = {}  # cat -> [(member, pokemon)]
     for cat in ["A", "B", "C"]:
-        # Externos usam pokémon próprio (de outro servidor) — não são chamados para marcar
-        cat_members = [m for m in members if ROLE_TO_CAT.get(m.role) == cat and not m.is_external]
-        if not cat_members:
+        role_members = [m for m in non_ext if ROLE_TO_CAT.get(m.role) == cat]
+        if not role_members:
             continue
+        free = (await db.execute(
+            select(Pokemon).where(Pokemon.category == cat, Pokemon.assigned_to.is_(None)).order_by(Pokemon.name)
+        )).scalars().all()
+        for i, p in enumerate(free):
+            m = role_members[i % len(role_members)]
+            p.assigned_to = m.user_id
+            p.assigned_at = now_local()
+            touched[p.id] = p
+            assigned.setdefault(cat, []).append((m, p))
+            db.add(History(actor_id=m.user_id, entity_type="pokemon", entity_id=p.id,
+                           action="assigned", detail=json.dumps({"pokemon": p.name, "auto": True})))
+
+    await db.commit()
+
+    # Atualiza os cards do painel
+    for p in touched.values():
+        await _rerender_pokemon(bot, p)
+
+    # Avisa cada canal de função o que foi marcado (auto-apaga)
+    for cat, pairs in assigned.items():
         channel = bot.get_channel(POKEMON_CHANNELS.get(cat)) if POKEMON_CHANNELS.get(cat) else None
         if not channel:
             continue
-
-        names = [p.name for p in free if p.category == cat]
-        mentions = " ".join(f"<@{m.user_id}>" for m in cat_members)
+        by_member: dict[str, list[str]] = {}
+        for m, p in pairs:
+            by_member.setdefault(m.user_id, []).append(p.name)
+        lines = []
+        for uid, names in by_member.items():
+            mem = channel.guild.get_member(int(uid)) if channel.guild else None
+            who = mem.mention if mem else f"<@{uid}>"
+            lines.append(f"{who}: {', '.join(names)}")
         embed = discord.Embed(
-            title=f"🎯 {CAT_LABEL[cat]} — marquem os pokémons da PT!",
-            description=(
-                f"A PT **{schedule.difficulty}** começa em breve.\n"
-                f"Marquem seus pokémons reagindo com 🎯.\n\n"
-                f"Livres: " + (", ".join(names) if names else "— nenhum livre")
-            ),
+            title=f"🎯 {CAT_LABEL[cat]} — pokémons marcados automaticamente",
+            description=(f"A PT **{schedule.difficulty}** está começando. "
+                        f"Já marquei os livres pra vocês:\n\n" + "\n".join(lines)),
             color=discord.Color.teal(),
         )
-        await channel.send(
-            content=mentions,
-            embed=embed,
-            allowed_mentions=discord.AllowedMentions(users=True),
-            delete_after=POKE_REMINDER_TTL_S,
-        )
-        sent_any = True
+        await channel.send(embed=embed, delete_after=POKE_REMINDER_TTL_S)
 
-    if sent_any:
-        _poke_reminded[schedule.id] = iso
+    _poke_reminded[schedule.id] = iso
 
 
 async def _send_warning(channel: discord.TextChannel, schedule: Schedule, member, milestone: str, secs: float):

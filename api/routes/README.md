@@ -55,6 +55,9 @@ Cada arquivo é um `APIRouter` registrado em `api/main.py`. Prefixo entre parên
 - `GET ""` — todos os membros do servidor (tabela `users`, populada pelo bot) com seus **personagens livres** (não ocupados em PT ativa). Usado no seletor de membros ao agendar. **Exclui convidados externos** (`is_external`).
 - `occupied_character_ids(db)` — personagens ocupados.
 
+## `metrics.py` — `/metrics` (Prometheus)
+- `GET /metrics` — métricas no formato Prometheus (sem auth): `discbot_db_up`, `discbot_db_query_latency_seconds`, `discbot_bot_up`, `discbot_bot_gateway_latency_ms`, `discbot_bot_guilds`, `discbot_schedules_active`, `discbot_pokemon_assigned/total`, `discbot_users_total`. Calculadas por scrape num `CollectorRegistry` próprio. Consumido pelo stack em `monitoring/` (Prometheus + Grafana + postgres_exporter).
+
 ## `history.py` — `/history` (admin)
 - `GET ""` — logs com **resumo legível** (resolve discord_id→nick e pokémon_id→nome). Filtro por `entity_type`, paginação.
 - `_summary(h, d, name, poke_name)` — monta a frase ("X concedeu admin para Y", "X marcou Charizard"...).

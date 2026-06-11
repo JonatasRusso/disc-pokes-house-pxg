@@ -9,7 +9,7 @@ from sqlalchemy import text
 from api.database import init_db, AsyncSessionLocal
 from api.models import BotHeartbeat
 from api.timeutil import now_local
-from api.routes import auth, characters, schedules, pokemon, history, members
+from api.routes import auth, characters, schedules, pokemon, history, members, metrics
 
 try:
     import psutil
@@ -48,6 +48,7 @@ app.include_router(schedules.router)
 app.include_router(pokemon.router)
 app.include_router(history.router)
 app.include_router(members.router)
+app.include_router(metrics.router)
 
 
 def _api_memory_mb():
