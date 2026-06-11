@@ -1,0 +1,18 @@
+global:
+  scrape_interval: 30s
+  scrape_timeout: 10s
+
+scrape_configs:
+  # Métricas da própria API (db up/latência, heartbeat do bot, contadores de PT/pokémon)
+  - job_name: discbot-api
+    metrics_path: /metrics
+    scheme: https            # use "http" se a API for local
+    static_configs:
+      # >>> EDITE: host da API (sem https://). Ex.: discbot-api-production.up.railway.app
+      # Para a API local, troque scheme para http e o target para host.docker.internal:8000
+      - targets: ["REPLACE_WITH_YOUR_API_HOST"]
+
+  # Métricas profundas do Postgres (conexões, transações, locks, tamanho) via postgres_exporter
+  - job_name: postgres
+    static_configs:
+      - targets: ["postgres-exporter:9187"]
