@@ -21,6 +21,10 @@ services:
     environment:
       # Postgres do Railway (ou local). Ex.: postgresql://user:pass@host:5432/db?sslmode=require
       DATA_SOURCE_NAME: ${PG_DSN}
+      # Queries extras (ex.: pg_stat_activity_count p/ o painel "Active sessions" do 9628)
+      PG_EXPORTER_EXTEND_QUERY_PATH: /etc/queries.yaml
+    volumes:
+      - ./postgres-exporter/queries.yaml:/etc/queries.yaml:ro
     ports:
       - "9187:9187"
     restart: unless-stopped
@@ -35,7 +39,7 @@ services:
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
       - grafana-data:/var/lib/grafana
     ports:
-      - "3000:3000"
+      - "${GF_PORT:-3000}:3000"   # troque a porta do host via GF_PORT no .env se a 3000 estiver ocupada
     depends_on:
       - prometheus
     restart: unless-stopped

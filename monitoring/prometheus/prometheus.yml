@@ -10,7 +10,7 @@ scrape_configs:
     static_configs:
       # >>> EDITE: host da API (sem https://). Ex.: discbot-api-production.up.railway.app
       # Para a API local, troque scheme para http e o target para host.docker.internal:8000
-      - targets: ["REPLACE_WITH_YOUR_API_HOST"]
+      - targets: ["disc-pokes-house-pxg-production.up.railway.app"]
 
   # Métricas profundas do Postgres (conexões, transações, locks, tamanho) via postgres_exporter
   - job_name: postgres
