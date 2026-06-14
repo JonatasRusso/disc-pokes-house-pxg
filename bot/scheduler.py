@@ -194,11 +194,12 @@ async def _send_party_rescheduled(channel: discord.TextChannel, item: Outbox):
     )
 
 
-async def _rollover_recurring():
+async def _rollover_recurring(bot: discord.Client):
     """Recorrência semanal: parties cuja ocorrência efetiva já terminou avançam para a
     próxima semana. Uma remarcação de 1 semana (override) é consumida aqui — limpa o
     override e pula o slot fixo desta semana, voltando ao normal na próxima."""
     now = now_local()
+    touched_pokemons: dict[int, Pokemon] = {}
     async with AsyncSessionLocal() as db:
         result = await db.execute(
             select(Schedule).where(
@@ -209,6 +210,30 @@ async def _rollover_recurring():
         for s in result.scalars().all():
             if _eff_end(s) >= now:
                 continue  # ocorrência efetiva ainda não terminou
+
+            # Libera os pokémons dos membros desta party que terminou
+            members = (await db.execute(
+                select(PartyMember).where(PartyMember.party_id == s.party_id)
+            )).scalars().all()
+            member_ids = {m.user_id for m in members if not m.is_external}
+            if member_ids:
+                held = (await db.execute(
+                    select(Pokemon).where(Pokemon.assigned_to.in_(member_ids))
+                )).scalars().all()
+                for p in held:
+                    prev_owner = p.assigned_to
+                    p.assigned_to = None
+                    p.assigned_at = None
+                    db.add(History(
+                        actor_id=prev_owner,
+                        entity_type="pokemon",
+                        entity_id=p.id,
+                        action="unassigned",
+                        detail=json.dumps({"pokemon": p.name, "auto": True}),
+                        happened_at=now
+                    ))
+                    touched_pokemons[p.id] = p
+
             # Consome o ciclo. Se tinha override, a ocorrência base desta semana fica
             # suprimida → avança o slot fixo ao menos uma semana.
             had_override = s.override_start is not None
@@ -232,9 +257,13 @@ async def _rollover_recurring():
             await db.commit()
             log.info(f"{rolled} party(ies) recorrente(s) avançada(s) para a próxima semana.")
 
+    # Re-renderiza os cards do painel fora da transação
+    for p in touched_pokemons.values():
+        await _rerender_pokemon(bot, p)
+
 
 async def _check_schedules(bot: discord.Client):
-    await _rollover_recurring()
+    await _rollover_recurring(bot)
 
     now = now_local()
     channel = bot.get_channel(DISCORD_NOTIFY_CHANNEL_ID)
