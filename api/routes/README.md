@@ -20,21 +20,22 @@ Cada arquivo é um `APIRouter` registrado em `api/main.py`. Prefixo entre parên
 
 ## `schedules.py` — `/schedules` (núcleo das PTs)
 **Helpers:**
-- `next_occurrence(weekday, hour, after)` — próxima data futura com aquele dia-da-semana/hora (recorrência semanal).
-- `_busy_weekday_hours(db, exclude=None)` / `_conflicts(weekday, hour, busy)` — conflito de horário: marcar trava o horário **+ as 2 horas posteriores**. `exclude` ignora um schedule (libera o slot da própria PT ao remarcar).
-- `ROLE_CAPACITY` — composição da PT: `{TANK:1, DPS:2, SUP:1}`.
+- `next_occurrence(weekday, hour, minute, after)` — próxima data futura com aquele dia-da-semana + **hora:minuto** (recorrência semanal; passos de 15 min).
+- `_segments(start, end)` / `_segments_overlap(a, b)` / `_has_conflict(db, start, end, exclude, effective)` — conflito por **sobreposição de intervalos** (dia + minuto-do-dia, com duração variável e virada de meia-noite). `exclude` ignora um schedule (libera o slot da própria PT); `effective=True` usa o override desta semana (remarcação `once`), `False` usa o slot fixo (recorrente).
+- `ROLE_CAPACITY` — composição da PT: `{TANK:1, DPS:2, SUP:1}`. `DEFAULT_DURATION_MIN`=180, `SLOT_STEP_MIN`=15; `_validate_duration(min)`.
 - `_occupied_character_ids(db)` — personagens já em PT ativa (regra 1 PT por personagem).
 - `_party_members_map(db, party_ids)` — membros por party (nick, role, character, is_coleader).
 - `_my_membership(db, schedule, user_id)` / `_can_manage(db, schedule, user)` — permissão (líder/co-líder/admin).
 - `_eff_start(s)` / `_eff_end(s)` — ocorrência **efetiva** (`override_start/end` se houver, senão o slot fixo).
-- `_schedule_dict(s)` — serializa schedule. `start_time/end_time` = ocorrência efetiva; `weekday/hour` = slot fixo recorrente; `is_override`/`override_start` indicam remarcação só desta semana.
+- `_schedule_dict(s)` — serializa schedule. `start_time/end_time` = ocorrência efetiva; `weekday/hour/minute/duration_minutes` = slot fixo recorrente; `is_override`/`override_start` indicam remarcação só desta semana.
 
 **Rotas:**
 - `GET ""` (`list_schedules`) — PTs onde o usuário é membro **ou** organizador; inclui members (com `confirmed`), `is_member`, `is_leader`, `can_manage`.
 - `GET /calendar` — todas as PTs ativas com membros (para o calendário).
-- `GET /free-slots` — grade semanal: cada hora (00:00–23:00) dos próximos 7 dias com flag `free` (sem trava de horário passado; recorrente). Query `exclude={id}` ignora uma PT (libera o slot dela ao remarcar).
-- `POST ""` (`create_schedule`) — cria PT recorrente; `include_self=false` (admin) cria sem participar; enfileira convites na `outbox`.
-- `PATCH /{id}/reschedule` — remarca (líder/co-líder/admin); reseta confirmações e avisa os demais membros (outbox `party_rescheduled`). Body `scope`: `"once"` (padrão — só esta semana, grava `override_start/end`) ou `"all"` (redefine o slot fixo e limpa override). Conflito do `once` é por ocorrência efetiva real; o `all` usa a grade semanal — ambos ignoram a própria PT. Body `force=true` ignora conflito com OUTRA PT (sobrescreve mesmo ocupado).
+- `GET /calendar` retorna `weekday/hour/minute/duration_minutes` por PT (para o picker e o calendário).
+- `GET /free-slots` — grade por hora cheia (7 dias) com flag `free` por hora — **só para a visualização do calendário** (o input usa o `SlotPicker`, não a grade). Query `exclude={id}` ignora uma PT.
+- `POST ""` (`create_schedule`) — cria PT recorrente; body tem `start_time` (dia+hora:minuto) e `duration_minutes` (padrão 180); `include_self=false` (admin) cria sem participar; enfileira convites na `outbox`.
+- `PATCH /{id}/reschedule` — remarca (líder/co-líder/admin); reseta confirmações e avisa os demais (outbox `party_rescheduled`). Body: `scope` `"once"`/`"all"`, `duration_minutes` (opcional — mantém a atual se ausente), `force` (ignora conflito com OUTRA PT). Conflito por sobreposição de intervalos (`once` usa override efetivo; `all` usa o slot fixo); ambos ignoram a própria PT.
 - `POST /{id}/add-member` — líder/co-líder/admin adiciona membro a uma PT incompleta; valida a composição (`ROLE_CAPACITY`). Membro da house (`discord_id`): cria `PartyMember` + confirmação pendente e convida no Discord (outbox `party_invite`). Externo de outro servidor (`external_name`): cria um `User` convidado (`is_external=true`, id `ext:<uuid>`) + `PartyMember.is_external=true`. O externo ocupa a vaga mas **não usa pokémon, não recebe ping e não confirma**. Membros são serializados com `is_external` (flag por participação `party_members.is_external`) e `is_guest` (convidado, `users.is_external`).
 - `POST /{id}/set-external` — **qualquer membro da PT** (ou admin) marca/desmarca outro membro como externo nesta PT (`party_members.is_external`): usa pokémon próprio (de outro servidor de jogo), então **fica fora do lembrete de pokémon** — mas continua recebendo aviso de início e confirmando presença. Convidado (`is_guest`) é externo fixo. Log `member_external`.
 - `POST /{id}/confirm` — membro confirma presença.

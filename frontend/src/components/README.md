@@ -5,9 +5,12 @@
 ## `Layout.tsx`
 Casca do app: navbar (marca **💀 VKG House**, links Dashboard / Minhas PTs / Agendar / Calendário / Perfil; Admin/Pokémons/Logs só para admin), avatar + badge **Admin** + logout, e rodapé com a versão (`__APP_VERSION__`). Envolve todas as páginas.
 
+## `SlotPicker.tsx`
+Seletor compacto de horário (substitui a grade no input). Props: `value` (`SlotValue` = `{weekday, time "HH:MM", durationMin}`), `onChange`, `parties?` (de `getCalendar`), `excludeScheduleId?`.
+- Campos: **dia da semana**, **início** (`input type=time`, passo 15 min), **duração** (`DURATION_OPTIONS`), e **"começar logo após outra PT"** (preenche dia+início com o fim da PT escolhida, mesmo em horário quebrado). Mostra o fim calculado e as PTs já marcadas no dia. Usado em **Agendar** e **Remarcar**. Converte para ISO via `buildStartIso` na página.
+
 ## `WeeklySlots.tsx`
-Grade semanal (colunas = dias da semana começando na **segunda**, linhas = horas 00:00–23:00). Props: `slots` (de `getFreeSlots`), `selected`, `onSelect`, `parties?` (de `getCalendar`).
-- Células: **verde** = disponível (clicável), **roxo** = selecionada, **âmbar** = PT marcada (mostra nicks; tooltip com membros). Usado em **Agendar**, **Remarcar** e **Calendário** (este só leitura, `onSelect` vazio).
+Grade semanal (colunas = dias começando na **segunda**, linhas = horas). Props: `slots` (de `getFreeSlots`), `selected`, `onSelect`, `parties?`. Hoje usada **só no Calendário** (leitura). Aproxima por hora cheia (não mostra minutos/duração com precisão — redesenho na fase de UI).
 
 ## `MemberPicker.tsx`
 Seletor dos membros da PT ao agendar. Props: `members` (de `getMembers`), `excludeId` (o criador), `value`/`onChange` (lista de `PartyMemberInput`).

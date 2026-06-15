@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { getCharacters, getFreeSlots, getMembers, getCalendar, createSchedule } from "../lib/api";
+import { getCharacters, getMembers, getCalendar, createSchedule, buildStartIso, DEFAULT_DURATION_MIN } from "../lib/api";
 import { useAuth } from "../lib/useAuth";
-import WeeklySlots from "../components/WeeklySlots";
+import SlotPicker, { SlotValue } from "../components/SlotPicker";
 import MemberPicker, { PartyMemberInput } from "../components/MemberPicker";
 
 const ROLES = ["DPS", "SUP", "TANK"] as const;
@@ -15,7 +15,6 @@ export default function Agendar() {
   const qc       = useQueryClient();
 
   const { data: characters = [] } = useQuery({ queryKey: ["characters"], queryFn: getCharacters });
-  const { data: slots      = [] } = useQuery({ queryKey: ["free-slots"], queryFn: () => getFreeSlots() });
   const { data: members    = [] } = useQuery({ queryKey: ["members"],    queryFn: getMembers });
   const { data: parties    = [] } = useQuery({ queryKey: ["calendar"],   queryFn: getCalendar });
 
@@ -24,7 +23,7 @@ export default function Agendar() {
   const [charId, setCharId] = useState<number | "">("");
   const [role,   setRole]   = useState("DPS");
   const [diff,   setDiff]   = useState("HARD");
-  const [slot,   setSlot]   = useState("");
+  const [slot,   setSlot]   = useState<SlotValue>({ weekday: 3, time: "20:00", durationMin: DEFAULT_DURATION_MIN });
   const [includeSelf, setIncludeSelf] = useState(true);
   const emptyRow = (r: string): PartyMemberInput => ({ discord_id: "", role: r, character_id: null });
   const [party,  setParty]  = useState<PartyMemberInput[]>([
@@ -46,7 +45,8 @@ export default function Agendar() {
       character_id:  includeSelf ? (charId as number) : null,
       role:          includeSelf ? role : null,
       difficulty:    diff,
-      start_time:    slot,
+      start_time:    buildStartIso(slot.weekday, slot.time),
+      duration_minutes: slot.durationMin,
       party_members: party.filter((m) => m.discord_id),
       include_self:  includeSelf,
     }),
@@ -76,7 +76,7 @@ export default function Agendar() {
     create.mutate();
   }
 
-  const canSubmit = slot && !create.isPending && (includeSelf ? !!charId : true);
+  const canSubmit = !create.isPending && (includeSelf ? !!charId : true);
 
   return (
     <div className="max-w-4xl space-y-6">
@@ -154,12 +154,10 @@ export default function Agendar() {
           </div>
         </div>
 
-        {/* Planilha semanal de horários */}
+        {/* Horário (dia + início + duração) */}
         <div>
-          <label className="block text-sm text-gray-400 mb-2">
-            Horário {slot && <span className="text-brand">— {new Date(slot).toLocaleString("pt-BR")}</span>}
-          </label>
-          <WeeklySlots slots={slots} selected={slot} onSelect={setSlot} parties={parties} />
+          <label className="block text-sm text-gray-400 mb-2">Horário</label>
+          <SlotPicker value={slot} onChange={setSlot} parties={parties} />
         </div>
 
         {/* Membros da party */}

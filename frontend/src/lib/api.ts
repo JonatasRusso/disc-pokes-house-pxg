@@ -37,8 +37,11 @@ export const getFreeSlots = (exclude?: number) =>
 export const getCalendar  = () => req<CalendarParty[]>("/schedules/calendar");
 export const createSchedule = (body: ScheduleIn) =>
   req<Schedule>("/schedules", { method: "POST", body: JSON.stringify(body) });
-export const reschedule = (id: number, new_start: string, scope: "once" | "all" = "once", force = false) =>
-  req<Schedule>(`/schedules/${id}/reschedule`, { method: "PATCH", body: JSON.stringify({ new_start, scope, force }) });
+export const reschedule = (
+  id: number, new_start: string, scope: "once" | "all" = "once", force = false,
+  duration_minutes?: number,
+) =>
+  req<Schedule>(`/schedules/${id}/reschedule`, { method: "PATCH", body: JSON.stringify({ new_start, scope, force, duration_minutes }) });
 export const addMember = (id: number, body: { discord_id?: string; external_name?: string; role: string; character_id: number | null }) =>
   req<{ ok: boolean }>(`/schedules/${id}/add-member`, { method: "POST", body: JSON.stringify(body) });
 export const setMemberExternal = (id: number, user_id: string, external: boolean) =>
@@ -108,6 +111,8 @@ export interface Schedule {
   end_time: string;
   weekday: number;  // 0=Seg .. 6=Dom — slot FIXO recorrente
   hour: number;
+  minute: number;
+  duration_minutes: number;
   is_override?: boolean;          // remarcada só esta semana
   override_start?: string | null; // ocorrência efetiva desta semana (quando is_override)
   organizer_id: string | null;
@@ -133,6 +138,8 @@ export interface CalendarParty {
   schedule_id: number;
   weekday: number;
   hour: number;
+  minute: number;
+  duration_minutes: number;
   difficulty: "HARD" | "NW";
   is_override?: boolean;
   members: ScheduleMember[];
@@ -140,6 +147,34 @@ export interface CalendarParty {
 
 // 0=Seg..6=Dom (Python weekday) para exibição
 export const WEEKDAY_LABEL = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"];
+export const WEEKDAY_SHORT = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"];
+
+// --- Helpers de horário (passos de 15 min, duração configurável) ---
+export const SLOT_STEP_MIN = 15;
+export const DEFAULT_DURATION_MIN = 180;
+
+// minutos do dia (0..1439) -> "HH:MM"
+export function fmtTime(totalMin: number): string {
+  const h = Math.floor((totalMin % 1440) / 60), m = totalMin % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+// duração em minutos -> "2h", "2h15", "45min"
+export function fmtDuration(min: number): string {
+  const h = Math.floor(min / 60), m = min % 60;
+  if (h === 0) return `${m}min`;
+  return m === 0 ? `${h}h` : `${h}h${String(m).padStart(2, "0")}`;
+}
+// monta um ISO local (sem timezone) com o dia-da-semana (Seg=0..Dom=6) e "HH:MM"
+export function buildStartIso(weekday: number, time: string): string {
+  const [h, m] = time.split(":").map(Number);
+  const d = new Date();
+  d.setHours(h, m, 0, 0);
+  while (((d.getDay() + 6) % 7) !== weekday) d.setDate(d.getDate() + 1);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(h)}:${p(m)}:00`;
+}
+// opções de duração (30 min .. 6h, passo 15)
+export const DURATION_OPTIONS = Array.from({ length: (360 - 30) / 15 + 1 }, (_, i) => 30 + i * 15);
 
 // Composição da PT: 1 tank, 2 dps, 1 suporte
 export type Role = "TANK" | "DPS" | "SUP";
@@ -156,6 +191,7 @@ export interface ScheduleIn {
   role: string | null;
   difficulty: string;
   start_time: string;
+  duration_minutes: number;
   party_members: { discord_id: string; role: string; character_id: number | null }[];
   include_self: boolean;
 }
