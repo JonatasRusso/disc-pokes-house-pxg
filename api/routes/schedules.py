@@ -14,13 +14,14 @@ from api.models import (
     ScheduleConfirmation, User
 )
 from api.timeutil import now_local
+from api.enums import (
+    PartyRole, Difficulty, ROLE_CAPACITY, ROLE_VALUES, DIFFICULTY_VALUES, ACTIVE_STATUSES,
+)
 
 router = APIRouter(prefix="/schedules", tags=["schedules"])
 
-ROLES = {"DPS", "SUP", "TANK"}
-ROLE_CAPACITY = {"TANK": 1, "DPS": 2, "SUP": 1}  # composição da PT: 1 tank, 2 dps, 1 suporte
-DIFFICULTIES = {"HARD", "NW"}
-ACTIVE_STATUSES = ["pending", "confirmed", "rescheduled"]
+ROLES = set(ROLE_VALUES)
+DIFFICULTIES = set(DIFFICULTY_VALUES)
 SITE_URL = os.getenv("SITE_URL", "http://localhost:5173")
 
 # Horários flexíveis: passos de 15 min e duração configurável (início + duração)
@@ -85,14 +86,14 @@ async def _has_conflict(db: AsyncSession, start: datetime, end: datetime,
 
 class PartyMemberIn(BaseModel):
     discord_id: str
-    role: str
+    role: PartyRole
     character_id: int | None = None
 
 
 class ScheduleIn(BaseModel):
     character_id: int | None = None     # personagem do criador (None se admin não se incluir)
-    role: str | None = None
-    difficulty: str
+    role: PartyRole | None = None
+    difficulty: Difficulty
     start_time: datetime                # ISO-8601 (usa dia-da-semana + hora:minuto)
     duration_minutes: int = DEFAULT_DURATION_MIN
     party_members: list[PartyMemberIn]  # demais membros da PT
@@ -514,7 +515,7 @@ async def kick_member(schedule_id: int, body: PromoteIn, user: User = Depends(ge
 class AddMemberIn(BaseModel):
     discord_id: str | None = None     # membro da house (do seletor)
     external_name: str | None = None  # OU convidado de outro servidor (só nome)
-    role: str
+    role: PartyRole
     character_id: int | None = None
 
 

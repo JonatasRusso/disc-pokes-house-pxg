@@ -3,7 +3,7 @@
 > Ao adicionar/alterar props ou comportamento, atualize este README.
 
 ## `Layout.tsx`
-Casca do app: navbar (marca **💀 VKG House**, links Dashboard / Minhas PTs / Agendar / Calendário / Perfil; Admin/Pokémons/Logs só para admin), avatar + badge **Admin** + logout, e rodapé com a versão (`__APP_VERSION__`). Envolve todas as páginas.
+Casca do app: navbar enxuta (marca **💀 VKG House**, links **Início / PTs / Calendário / Perfil**; **Agendar** saiu do topo — acessível pelo botão em PTs; admin agrupado num dropdown **Admin ▾** → Planilha / Pokémons / Logs), avatar + badge **Admin** + logout, e rodapé com a versão (`__APP_VERSION__`). Envolve todas as páginas.
 
 ## `SlotPicker.tsx`
 Seletor compacto de horário (substitui a grade no input). Props: `value` (`SlotValue` = `{weekday, time "HH:MM", durationMin}`), `onChange`, `parties?` (de `getCalendar`), `excludeScheduleId?`.

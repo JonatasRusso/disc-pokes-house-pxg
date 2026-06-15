@@ -29,6 +29,10 @@ Camada de dados/HTTP usada pela **API** e importada também pelo **bot** (models
 - **`require_admin(...)`** — dependência: exige `user.is_admin` (403 caso contrário).
 - `exchange_code(code)` — troca o code do OAuth2 por access_token; `get_discord_user(token)` — busca o perfil no Discord.
 
+### `enums.py` — Enums compartilhados
+- `PartyRole` (TANK/DPS/SUP), `Difficulty` (HARD/NW), `PokemonCategory` (A/B/C), `ScheduleStatus` — todos `str, Enum` (valores idênticos ao banco → sem migração). Usados para validação automática nos Pydantic.
+- Derivados reutilizáveis: `ROLE_VALUES`, `DIFFICULTY_VALUES`, `CATEGORY_VALUES`, `ACTIVE_STATUSES`, `ROLE_CAPACITY`, `ROLE_TO_CATEGORY`, `CATEGORY_LABEL`. Importados por `routes/schedules.py`, `routes/pokemon.py` e `bot/scheduler.py`/`bot/commands/pokemon.py`.
+
 ### `timeutil.py` — Fuso horário
 - **`now_local()`** — hora local (naive) da comunidade. **Usar sempre isto** em vez de `datetime.utcnow()` para horários de PT.
 - `LOCAL_TZ`, offset via `APP_UTC_OFFSET` (default -3 / Brasília, sem horário de verão).

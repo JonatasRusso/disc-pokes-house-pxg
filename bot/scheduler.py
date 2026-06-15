@@ -27,8 +27,7 @@ _warn_state: dict[tuple[int, str], dict] = {}
 # schedule_id -> start_time iso já lembrado (evita repetir o lembrete de pokémon na mesma ocorrência)
 _poke_reminded: dict[int, str] = {}
 
-ROLE_TO_CAT  = {"TANK": "A", "DPS": "B", "SUP": "C"}
-CAT_LABEL    = {"A": "Tank", "B": "DPS", "C": "Sup"}
+from api.enums import ROLE_TO_CATEGORY as ROLE_TO_CAT, CATEGORY_LABEL as CAT_LABEL
 
 
 def _eff_start(s: Schedule) -> datetime:
