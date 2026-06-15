@@ -1,6 +1,8 @@
 import discord
 from discord import app_commands
 from discord.ext import commands
+from api.database import AsyncSessionLocal
+from api.models import User
 from bot.config import SITE_URL
 
 
@@ -53,6 +55,21 @@ class ScheduleCog(commands.Cog):
         view.add_item(discord.ui.Button(label="📅 Só esta semana", style=discord.ButtonStyle.link, url=once_url))
         view.add_item(discord.ui.Button(label="🔁 Todas as semanas", style=discord.ButtonStyle.link, url=all_url))
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+
+
+    @app_commands.command(name="resumo", description="(Admin) Postar o resumo das PTs da semana agora")
+    async def resumo(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        async with AsyncSessionLocal() as db:
+            u = await db.get(User, str(interaction.user.id))
+        is_admin = bool(u and u.is_admin) or (
+            interaction.guild is not None and interaction.guild.owner_id == interaction.user.id)
+        if not is_admin:
+            await interaction.followup.send("Apenas admins podem postar o resumo.", ephemeral=True)
+            return
+        from bot.scheduler import _post_weekly_schedule
+        await _post_weekly_schedule(self.bot)
+        await interaction.followup.send("Resumo da semana postado ✅", ephemeral=True)
 
 
 async def setup(bot: commands.Bot):

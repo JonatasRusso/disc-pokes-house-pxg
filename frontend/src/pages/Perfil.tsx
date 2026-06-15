@@ -1,12 +1,14 @@
 import { useState, useEffect } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { getCharacters, createCharacter, updateCharacter, deleteCharacter, updateMySettings, Character } from "../lib/api";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { updateMySettings, Character } from "../lib/api";
+import { qk } from "../lib/queryKeys";
+import { useCharacters } from "../hooks/useCharacters";
 import { useAuth } from "../lib/useAuth";
 
 export default function Perfil() {
   const { user } = useAuth();
   const qc = useQueryClient();
-  const { data: chars = [], isLoading } = useQuery({ queryKey: ["characters"], queryFn: getCharacters });
+  const { characters: chars, isLoading, create, update, remove } = useCharacters();
 
   const [newName, setNewName] = useState("");
   const [editing, setEditing] = useState<Character | null>(null);
@@ -17,22 +19,7 @@ export default function Perfil() {
 
   const saveLead = useMutation({
     mutationFn: () => updateMySettings(lead),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["me"] }),
-  });
-
-  const create = useMutation({
-    mutationFn: () => createCharacter({ name: newName }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["characters"] }); setNewName(""); },
-  });
-
-  const update = useMutation({
-    mutationFn: (c: Character) => updateCharacter(c.id, { name: c.name }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["characters"] }); setEditing(null); },
-  });
-
-  const remove = useMutation({
-    mutationFn: (id: number) => deleteCharacter(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["characters"] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.me }),
   });
 
   return (
@@ -92,7 +79,7 @@ export default function Perfil() {
                       value={editing.name}
                       onChange={(e) => setEditing({ ...editing, name: e.target.value })}
                     />
-                    <button onClick={() => update.mutate(editing)} className="text-green-400 text-sm hover:underline">Salvar</button>
+                    <button onClick={() => editing && update.mutate({ id: editing.id, name: editing.name }, { onSuccess: () => setEditing(null) })} className="text-green-400 text-sm hover:underline">Salvar</button>
                     <button onClick={() => setEditing(null)} className="text-gray-500 text-sm hover:underline">Cancelar</button>
                   </>
                 ) : (
@@ -116,10 +103,10 @@ export default function Perfil() {
               placeholder="Nome do personagem"
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter" && newName.trim()) create.mutate(); }}
+              onKeyDown={(e) => { if (e.key === "Enter" && newName.trim()) create.mutate(newName, { onSuccess: () => setNewName("") }); }}
             />
             <button
-              onClick={() => create.mutate()}
+              onClick={() => create.mutate(newName, { onSuccess: () => setNewName("") })}
               disabled={!newName.trim() || create.isPending}
               className="bg-brand hover:bg-brand-dark disabled:opacity-40 text-white px-4 py-2 rounded text-sm font-medium"
             >

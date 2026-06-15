@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.auth import get_current_user, require_admin
 from api.database import get_db
+from api.enums import PokemonCategory
 from api.models import History, Pokemon, User
 from api.timeutil import now_local
 
@@ -14,13 +15,13 @@ router = APIRouter(prefix="/pokemon", tags=["pokemon"])
 class PokemonIn(BaseModel):
     name: str
     image_url: str | None = None
-    category: str
+    category: PokemonCategory
 
 
 class PokemonUpdate(BaseModel):
     name: str | None = None
     image_url: str | None = None
-    category: str | None = None
+    category: PokemonCategory | None = None
 
 
 @router.get("")
@@ -48,9 +49,7 @@ def _clean_image_url(url: str | None) -> str | None:
 
 @router.post("")
 async def create_pokemon(body: PokemonIn, admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
-    if body.category not in ("A", "B", "C"):
-        raise HTTPException(400, "Categoria inválida. Use A, B ou C.")
-    p = Pokemon(name=body.name.strip(), image_url=_clean_image_url(body.image_url), category=body.category)
+    p = Pokemon(name=body.name.strip(), image_url=_clean_image_url(body.image_url), category=body.category.value)
     db.add(p)
     await db.commit()
     await db.refresh(p)
@@ -65,9 +64,7 @@ async def update_pokemon(pokemon_id: int, body: PokemonUpdate, admin: User = Dep
     if body.name is not None:
         p.name = body.name.strip()
     if body.category is not None:
-        if body.category not in ("A", "B", "C"):
-            raise HTTPException(400, "Categoria inválida. Use A, B ou C.")
-        p.category = body.category
+        p.category = body.category.value
     if body.image_url is not None:
         p.image_url = _clean_image_url(body.image_url)
     await db.commit()

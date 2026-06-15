@@ -6,12 +6,11 @@ from discord.ext import commands
 from sqlalchemy import select
 
 from api.database import AsyncSessionLocal
+from api.enums import CATEGORY_LABEL
 from api.models import Pokemon, User
 from bot.config import POKEMON_CHANNELS
 
 log = logging.getLogger(__name__)
-
-CATEGORY_LABEL = {"A": "Tank", "B": "DPS", "C": "Sup"}
 
 
 def valid_image_url(url: str | None) -> str | None:

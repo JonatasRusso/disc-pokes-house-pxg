@@ -4,7 +4,7 @@ import { Link } from "react-router-dom";
 import {
   getSchedules, getCharacters, getMembers, WEEKDAY_LABEL, Schedule, Role, ROLE_CAPACITY,
   confirmPresence, leaveParty, setMyCharacter, cancelSchedule,
-  promoteColeader, kickMember, addMember, setMemberExternal,
+  promoteColeader, kickMember, addMember, setMemberExternal, fmtTime, fmtDuration,
 } from "../lib/api";
 import { useAuth } from "../lib/useAuth";
 
@@ -76,7 +76,8 @@ function PTCard({ schedule: s, myId }: { schedule: Schedule; myId: string }) {
             {s.is_leader && <span className="ml-2 text-[10px] bg-brand text-white px-1.5 py-0.5 rounded">você é líder</span>}
           </p>
           <p className="text-gray-400 text-sm">
-            🔁 Toda <strong>{WEEKDAY_LABEL[s.weekday]}</strong> {String(s.hour).padStart(2, "0")}:00 → {String((s.hour + 3) % 24).padStart(2, "0")}:00
+            🔁 Toda <strong>{WEEKDAY_LABEL[s.weekday]}</strong> {fmtTime(s.hour * 60 + s.minute)} → {fmtTime(s.hour * 60 + s.minute + s.duration_minutes)}
+            <span className="text-gray-600"> · {fmtDuration(s.duration_minutes)}</span>
           </p>
           {s.is_override ? (
             <p className="text-amber-400 text-xs">

@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { getSchedules, cancelSchedule, WEEKDAY_LABEL } from "../lib/api";
+import { getSchedules, cancelSchedule, WEEKDAY_LABEL, fmtTime, fmtDuration } from "../lib/api";
 
 const STATUS_COLOR: Record<string, string> = {
   pending:     "text-yellow-400",
@@ -43,7 +43,7 @@ export default function AdminPlanilha() {
               <tr key={s.id} className="hover:bg-gray-900/50">
                 <td className="py-2 pr-4 text-gray-400">#{s.id}</td>
                 <td className="py-2 pr-4 font-medium">{s.difficulty}</td>
-                <td className="py-2 pr-4 text-gray-300">🔁 Toda {WEEKDAY_LABEL[s.weekday]} {String(s.hour).padStart(2, "0")}:00</td>
+                <td className="py-2 pr-4 text-gray-300">🔁 Toda {WEEKDAY_LABEL[s.weekday]} {fmtTime(s.hour * 60 + s.minute)} <span className="text-gray-600">· {fmtDuration(s.duration_minutes)}</span></td>
                 <td className="py-2 pr-4 text-gray-400">{new Date(s.start_time).toLocaleDateString("pt-BR")}</td>
                 <td className={`py-2 pr-4 font-medium ${STATUS_COLOR[s.status]}`}>{s.status}</td>
                 <td className="py-2">

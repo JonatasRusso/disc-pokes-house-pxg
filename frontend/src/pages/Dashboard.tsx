@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { getSchedules, getPokemon, WEEKDAY_LABEL } from "../lib/api";
+import { getSchedules, getPokemon, WEEKDAY_LABEL, fmtTime } from "../lib/api";
 import { useAuth } from "../lib/useAuth";
 import { Link } from "react-router-dom";
 
@@ -45,7 +45,7 @@ export default function Dashboard() {
                   <span className={`text-xs px-2 py-0.5 rounded-full text-white font-medium ${STATUS_COLOR[s.status]}`}>{s.status}</span>
                   <span className="font-medium">{s.difficulty}</span>
                   <span className="text-gray-400 text-sm">
-                    🔁 {WEEKDAY_LABEL[s.weekday]} {String(s.hour).padStart(2, "0")}:00
+                    🔁 {WEEKDAY_LABEL[s.weekday]} {fmtTime(s.hour * 60 + s.minute)}
                   </span>
                   {s.is_override && (
                     <span className="text-amber-400 text-xs" title="Remarcada só esta semana">📌 esta semana</span>

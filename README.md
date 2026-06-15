@@ -50,6 +50,7 @@ Discord  ←→  Railway (2 processos no mesmo container)  ←→  Vercel (front
 
 ## Conceitos-chave
 - **PT recorrente:** uma PT é fixa e **repete toda semana**. O `start_time` guarda a próxima ocorrência; o bot avança +7 dias quando ela termina (`_rollover_recurring`).
+- **Horário flexível:** início em passos de **15 min** (ex.: 17:30) e **duração configurável** (início + duração, padrão 3h — `start_time`/`end_time` guardam o real). Conflito por **sobreposição de intervalos** (dia + minuto, com virada de meia-noite), não mais "hora cheia". Input via `SlotPicker` (dia + hora + duração + "começar após outra PT"), não mais a grade de horas.
 - **Fuso horário:** horários são interpretados no fuso da comunidade via `api/timeutil.now_local()` (offset `APP_UTC_OFFSET`, padrão -3). **Nunca usar `datetime.utcnow()`** para comparar horários de PT.
 - **Papéis:** organizador (líder) → pode promover co-líderes; líder/co-líder/admin gerenciam a PT.
 - **Pokémon categorias:** `A`=Tank, `B`=DPS, `C`=Sup (armazenadas como A/B/C, exibidas como Tank/DPS/Sup).

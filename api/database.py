@@ -12,7 +12,10 @@ engine = create_async_engine(DATABASE_URL, echo=False)
 AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False)
 
 
-# Migrações leves idempotentes (sem Alembic). create_all não altera tabelas existentes.
+# LEGADO (congelado): migrações idempotentes manuais. A evolução de schema agora é via
+# **Alembic** (`alembic/`, rodado no start — ver start.sh/railway.toml). Esta lista fica
+# como rede de segurança para bancos de dev antigos; NÃO adicione novas entradas aqui —
+# crie uma migração: `alembic revision --autogenerate -m "..."`.
 _MIGRATIONS = [
     "ALTER TABLE party_members ADD COLUMN IF NOT EXISTS character_id INTEGER",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS nick TEXT",

@@ -20,17 +20,19 @@ Processo separado da API (`python -m bot.main`). Compartilha o banco com a API (
 - **`POKEMON_CHANNEL_IDS`** — conjunto de canais válidos (guard das reações).
 
 ### `scheduler.py` — Jobs periódicos (APScheduler) e notificações
-- **`start_scheduler(bot)`** — registra 3 jobs (cada 20s/20s/30s): `_check_schedules`, `_process_outbox`, `write_heartbeat`.
+- **`start_scheduler(bot)`** — registra os jobs: `_check_schedules` (20s), `_process_outbox` (20s), `write_heartbeat` (30s) e `_post_weekly_schedule` (cron: segunda 09:00).
+- **`_post_weekly_schedule(bot)`** — posta no canal de avisos um **resumo das PTs da semana** (por dia: horário, dificuldade e membros), apagando o resumo da semana anterior (`_weekly_msg_id`). Disparável na hora via `/resumo` (admin).
 - **`_check_schedules(bot)`** — coração das notificações. Roda rollover, **filtra convidados de fora** (`User.is_external` — sem conta no Discord da house, não dá pra pingar; externos de jogo `PartyMember.is_external` recebem aviso e confirmam normalmente, ficando de fora só do lembrete de pokémon), depois para cada membro não confirmado decide o aviso: **1º aviso** (N min antes, configurável por usuário), **1 min**, **30s**, **atraso** (a cada 30s). "Avisar e deletar": apaga o aviso anterior e some ao confirmar. Estado em `_warn_state` (podado a cada tick). Dispara o lembrete de pokémon dentro da janela de 30 min.
 - `_send_warning(...)` — monta/envia o embed do aviso (com reação ✅) e devolve a mensagem.
 - `_delete_warn(channel, key)` — apaga a mensagem de aviso atual.
 - **`handle_confirmation(bot, payload)`** — reação ✅ confirma presença e apaga o aviso.
 - **`_process_outbox(bot)`** — envia itens da `outbox` (`_send_party_invite`, `_send_party_left`, `_send_party_rescheduled`); abandona itens com >15 min sem enviar (ex: bot sem permissão).
-- **`_rollover_recurring()`** — avança PTs cuja ocorrência **efetiva** terminou +7 dias (recorrência) e reseta confirmações. Uma remarcação de 1 semana (`override_start/end`) é consumida aqui: limpa o override e pula o slot fixo desta semana, voltando ao normal na próxima.
+- **`_rollover_recurring(bot)`** — avança PTs cuja ocorrência **efetiva** terminou +7 dias (recorrência), reseta confirmações e **libera os pokémons dos membros** dessa ocorrência (re-renderizando o painel). Uma remarcação de 1 semana (`override_start/end`) é consumida aqui: limpa o override e pula o slot fixo desta semana, voltando ao normal na próxima.
+- **`_sweep_orphan_pokemons(bot)`** — varredura (a cada tick, após o rollover) que libera pokémons cujo dono **não está em nenhuma PT ativa** e marcados há mais que `POKE_ORPHAN_GRACE_S` (cobre PT cancelada, membro que saiu/foi removido e resíduo antigo). Quem está em PT ativa nunca é tocado; re-renderiza os cards liberados.
 - **`_eff_start(s)` / `_eff_end(s)`** — ocorrência efetiva (override de 1 semana, se houver). Usadas na janela de checagem, no rollover e na chave `iso` dos avisos.
 - **`_pokemon_auto_assign(...)`** — **no início do horário da PT** (`sched_secs <= 0`), **marca automaticamente** os pokémons livres da função de cada membro (rodízio entre membros da mesma função), libera primeiro o que eles tinham, re-renderiza os cards do painel (`_rerender_pokemon`) e avisa cada canal (auto-apaga). 1x por ocorrência. Externos (pokémon próprio) são ignorados.
 - **Limpeza dos canais:** mensagens transitórias do bot se auto-apagam (`delete_after`) para não poluir — convites/saída/remarcação (`NOTICE_TTL_S`, 30 min) e lembrete de pokémon (`POKE_REMINDER_TTL_S`, 40 min). Avisos de PT já somem ao confirmar; o que sobra é apagado quando a ocorrência sai da janela (prune em `_check_schedules`). O **painel** de `/pokemon-painel` é permanente (não é apagado).
-- Constantes: `ROLE_TO_CAT`, `CAT_LABEL`, `OUTBOX_GIVEUP`, `NOTICE_TTL_S`, `POKE_REMINDER_TTL_S`.
+- Constantes: `ROLE_TO_CAT`, `CAT_LABEL`, `OUTBOX_GIVEUP`, `NOTICE_TTL_S`, `POKE_REMINDER_TTL_S`, `POKE_ORPHAN_GRACE_S`.
 
 ### `health.py` — Heartbeat do bot
 - **`write_heartbeat(bot)`** — grava na tabela `bot_heartbeat` (is_ready, latência, guilds, memória, last_command_at) para o `/health` da API ler.

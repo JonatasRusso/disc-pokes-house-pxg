@@ -1,9 +1,11 @@
+import { useState } from "react";
 import { Link, NavLink, useNavigate } from "react-router-dom";
 import { useAuth } from "../lib/useAuth";
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const { user, isLoggedIn } = useAuth();
   const navigate = useNavigate();
+  const [adminOpen, setAdminOpen] = useState(false);
 
   const navClass = ({ isActive }: { isActive: boolean }) =>
     `px-3 py-1.5 rounded-lg text-xs font-semibold uppercase tracking-wider transition-all duration-200 border ${
@@ -29,17 +31,41 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           </Link>
           {isLoggedIn && (
             <>
-              <NavLink to="/dashboard" className={navClass}>Dashboard</NavLink>
-              <NavLink to="/minhas-pts" className={navClass}>Minhas PTs</NavLink>
-              <NavLink to="/agendar" className={navClass}>Agendar</NavLink>
+              <NavLink to="/dashboard" className={navClass}>Início</NavLink>
+              <NavLink to="/minhas-pts" className={navClass}>PTs</NavLink>
               <NavLink to="/calendario" className={navClass}>Calendário</NavLink>
               <NavLink to="/perfil" className={navClass}>Perfil</NavLink>
               {user?.is_admin && (
-                <>
-                  <NavLink to="/admin/planilha" className={navClass}>Admin</NavLink>
-                  <NavLink to="/admin/pokemon" className={navClass}>Pokémons</NavLink>
-                  <NavLink to="/admin/logs" className={navClass}>Logs</NavLink>
-                </>
+                <div className="relative" onMouseLeave={() => setAdminOpen(false)}>
+                  <button
+                    onClick={() => setAdminOpen((v) => !v)}
+                    className="px-3 py-1.5 rounded-lg text-xs font-semibold uppercase tracking-wider border text-gray-400 border-transparent hover:bg-gray-900/50 hover:text-gray-100 hover:border-gray-800/80"
+                  >
+                    Admin ▾
+                  </button>
+                  {adminOpen && (
+                    <div className="absolute left-0 mt-1 w-40 bg-gray-900 border border-gray-800 rounded-lg shadow-lg py-1 z-50">
+                      {[
+                        { to: "/admin/planilha", label: "Planilha" },
+                        { to: "/admin/pokemon", label: "Pokémons" },
+                        { to: "/admin/logs", label: "Logs" },
+                      ].map((it) => (
+                        <NavLink
+                          key={it.to}
+                          to={it.to}
+                          onClick={() => setAdminOpen(false)}
+                          className={({ isActive }) =>
+                            `block px-4 py-2 text-xs font-semibold uppercase tracking-wider ${
+                              isActive ? "text-brand bg-brand/10" : "text-gray-400 hover:text-gray-100 hover:bg-gray-800/60"
+                            }`
+                          }
+                        >
+                          {it.label}
+                        </NavLink>
+                      ))}
+                    </div>
+                  )}
+                </div>
               )}
               <div className="ml-auto flex items-center gap-3">
                 {user?.avatar_url && (

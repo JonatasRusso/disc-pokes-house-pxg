@@ -27,8 +27,11 @@ _warn_state: dict[tuple[int, str], dict] = {}
 # schedule_id -> start_time iso já lembrado (evita repetir o lembrete de pokémon na mesma ocorrência)
 _poke_reminded: dict[int, str] = {}
 
-ROLE_TO_CAT  = {"TANK": "A", "DPS": "B", "SUP": "C"}
-CAT_LABEL    = {"A": "Tank", "B": "DPS", "C": "Sup"}
+from api.enums import ROLE_TO_CATEGORY as ROLE_TO_CAT, CATEGORY_LABEL as CAT_LABEL, ACTIVE_STATUSES
+
+WEEKDAYS_PT = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"]
+ROLE_ORDER  = {"TANK": 0, "SUP": 1, "DPS": 2}
+_weekly_msg_id: int | None = None  # última mensagem do resumo semanal (para apagar a anterior)
 
 
 def _eff_start(s: Schedule) -> datetime:
@@ -46,9 +49,69 @@ def start_scheduler(bot: discord.Client):
     scheduler.add_job(_check_schedules, "interval", seconds=20, args=[bot])
     scheduler.add_job(_process_outbox, "interval", seconds=20, args=[bot])
     scheduler.add_job(write_heartbeat, "interval", seconds=30, args=[bot])
+    # Resumo semanal das PTs — toda segunda 09:00 (fuso do servidor)
+    scheduler.add_job(_post_weekly_schedule, "cron", day_of_week="mon", hour=9, minute=0, args=[bot])
     scheduler.start()
     log.info("Scheduler iniciado.")
     return scheduler
+
+
+async def _post_weekly_schedule(bot: discord.Client):
+    """Posta (toda semana) um resumo das PTs da semana no canal de avisos: por dia,
+    o horário, a dificuldade e os membros. Apaga o resumo da semana anterior."""
+    global _weekly_msg_id
+    channel = bot.get_channel(DISCORD_NOTIFY_CHANNEL_ID)
+    if not channel:
+        return
+
+    async with AsyncSessionLocal() as db:
+        scheds = (await db.execute(
+            select(Schedule).where(Schedule.status.in_(ACTIVE_STATUSES))
+        )).scalars().all()
+        # membros por party
+        members_by_party: dict[int, list] = {}
+        for s in scheds:
+            rows = (await db.execute(
+                select(PartyMember, User)
+                .join(User, User.discord_id == PartyMember.user_id)
+                .where(PartyMember.party_id == s.party_id)
+            )).all()
+            members_by_party[s.party_id] = sorted(
+                [(pm.role, u.nick or u.username) for pm, u in rows],
+                key=lambda rn: ROLE_ORDER.get(rn[0], 9),
+            )
+
+    if not scheds:
+        return
+
+    # agrupa por dia da semana (do slot fixo)
+    by_day: dict[int, list[str]] = {}
+    for s in scheds:
+        wd = s.start_time.weekday()
+        start_m = s.start_time.hour * 60 + s.start_time.minute
+        end_m   = start_m + int((s.end_time - s.start_time).total_seconds() // 60)
+        hhmm = lambda m: f"{m // 60 % 24:02d}:{m % 60:02d}"
+        mem = ", ".join(f"{r[0]} {r[1]}" for r in members_by_party.get(s.party_id, [])) or "—"
+        by_day.setdefault(wd, []).append((start_m, f"`{hhmm(start_m)}–{hhmm(end_m)}` **{s.difficulty}** — {mem}"))
+
+    embed = discord.Embed(
+        title="📅 PTs da semana",
+        description="Horários fixos das parties. Use `/agendar` ou o site para mudanças.",
+        color=discord.Color.blurple(),
+    )
+    for wd in range(7):
+        if wd in by_day:
+            lines = [t for _, t in sorted(by_day[wd], key=lambda x: x[0])]
+            embed.add_field(name=WEEKDAYS_PT[wd], value="\n".join(lines), inline=False)
+
+    # apaga o resumo da semana passada (se ainda lembramos dele) e posta o novo
+    if _weekly_msg_id:
+        try:
+            await channel.get_partial_message(_weekly_msg_id).delete()
+        except Exception:
+            pass
+    msg = await channel.send(embed=embed)
+    _weekly_msg_id = msg.id
 
 
 async def _delete_warn(channel: discord.TextChannel, key: tuple[int, str]):
@@ -67,6 +130,10 @@ OUTBOX_GIVEUP = timedelta(minutes=15)  # abandona item que não envia há 15 min
 # TTL de mensagens transitórias do bot (auto-apagam para não poluir os canais)
 NOTICE_TTL_S        = 30 * 60   # convites / saída / remarcação
 POKE_REMINDER_TTL_S = 40 * 60   # lembrete de pokémon (posta ~30 min antes; some no início da PT)
+
+# Carência da varredura de pokémons órfãos: só libera marcação mais antiga que isto
+# (protege marcação recém-feita, auto ou manual).
+POKE_ORPHAN_GRACE_S = 30 * 60
 
 
 async def _process_outbox(bot: discord.Client):
@@ -262,8 +329,51 @@ async def _rollover_recurring(bot: discord.Client):
         await _rerender_pokemon(bot, p)
 
 
+async def _sweep_orphan_pokemons(bot: discord.Client):
+    """Libera pokémons cujo dono NÃO está em nenhuma PT ativa (PT cancelada, membro que
+    saiu/foi removido, ou resíduo antigo) e que foram marcados há mais que a carência.
+    Complementa o rollover (que solta no fim de cada ocorrência). Quem está em PT ativa
+    nunca é tocado; a carência protege marcação recém-feita (auto ou manual)."""
+    now = now_local()
+    cutoff = now - timedelta(seconds=POKE_ORPHAN_GRACE_S)
+    freed: list[Pokemon] = []
+    async with AsyncSessionLocal() as db:
+        active_ids = set((await db.execute(
+            select(PartyMember.user_id)
+            .join(Schedule, Schedule.party_id == PartyMember.party_id)
+            .where(Schedule.status.in_(["pending", "confirmed", "rescheduled"]))
+        )).scalars().all())
+
+        assigned = (await db.execute(
+            select(Pokemon).where(Pokemon.assigned_to.isnot(None))
+        )).scalars().all()
+
+        for p in assigned:
+            if p.assigned_to in active_ids:
+                continue  # dono em PT ativa → mantém
+            if p.assigned_at and p.assigned_at > cutoff:
+                continue  # marcado há pouco → carência
+            prev = p.assigned_to
+            p.assigned_to = None
+            p.assigned_at = None
+            db.add(History(
+                actor_id=prev, entity_type="pokemon", entity_id=p.id, action="unassigned",
+                detail=json.dumps({"pokemon": p.name, "auto": True, "orphan": True}),
+                happened_at=now,
+            ))
+            freed.append(p)
+
+        if freed:
+            await db.commit()
+            log.info(f"{len(freed)} pokémon(s) órfão(s) liberado(s).")
+
+    for p in freed:
+        await _rerender_pokemon(bot, p)
+
+
 async def _check_schedules(bot: discord.Client):
     await _rollover_recurring(bot)
+    await _sweep_orphan_pokemons(bot)
 
     now = now_local()
     channel = bot.get_channel(DISCORD_NOTIFY_CHANNEL_ID)
