@@ -9,6 +9,7 @@ Comandos enxutos que apontam para o site (a gestão real é no front — sem que
 - **`/site`** — link pro painel do site (`/dashboard`): PTs, agenda, remarcação, pokémons.
 - **`/agendar`** — manda link do formulário de agendamento.
 - **`/remarcar [id]`** — mostra 2 botões de link para remarcar no site: **📅 Só esta semana** (`?scope=once`) e **🔁 Todas as semanas** (`?scope=all`).
+- **`/resumo`** (admin) — posta na hora o resumo das PTs da semana (mesmo conteúdo do post automático de segunda).
 
 ## `pokemon.py` — `PokemonCog`
 **Helpers:**

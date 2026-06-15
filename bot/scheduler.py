@@ -27,7 +27,11 @@ _warn_state: dict[tuple[int, str], dict] = {}
 # schedule_id -> start_time iso já lembrado (evita repetir o lembrete de pokémon na mesma ocorrência)
 _poke_reminded: dict[int, str] = {}
 
-from api.enums import ROLE_TO_CATEGORY as ROLE_TO_CAT, CATEGORY_LABEL as CAT_LABEL
+from api.enums import ROLE_TO_CATEGORY as ROLE_TO_CAT, CATEGORY_LABEL as CAT_LABEL, ACTIVE_STATUSES
+
+WEEKDAYS_PT = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"]
+ROLE_ORDER  = {"TANK": 0, "SUP": 1, "DPS": 2}
+_weekly_msg_id: int | None = None  # última mensagem do resumo semanal (para apagar a anterior)
 
 
 def _eff_start(s: Schedule) -> datetime:
@@ -45,9 +49,69 @@ def start_scheduler(bot: discord.Client):
     scheduler.add_job(_check_schedules, "interval", seconds=20, args=[bot])
     scheduler.add_job(_process_outbox, "interval", seconds=20, args=[bot])
     scheduler.add_job(write_heartbeat, "interval", seconds=30, args=[bot])
+    # Resumo semanal das PTs — toda segunda 09:00 (fuso do servidor)
+    scheduler.add_job(_post_weekly_schedule, "cron", day_of_week="mon", hour=9, minute=0, args=[bot])
     scheduler.start()
     log.info("Scheduler iniciado.")
     return scheduler
+
+
+async def _post_weekly_schedule(bot: discord.Client):
+    """Posta (toda semana) um resumo das PTs da semana no canal de avisos: por dia,
+    o horário, a dificuldade e os membros. Apaga o resumo da semana anterior."""
+    global _weekly_msg_id
+    channel = bot.get_channel(DISCORD_NOTIFY_CHANNEL_ID)
+    if not channel:
+        return
+
+    async with AsyncSessionLocal() as db:
+        scheds = (await db.execute(
+            select(Schedule).where(Schedule.status.in_(ACTIVE_STATUSES))
+        )).scalars().all()
+        # membros por party
+        members_by_party: dict[int, list] = {}
+        for s in scheds:
+            rows = (await db.execute(
+                select(PartyMember, User)
+                .join(User, User.discord_id == PartyMember.user_id)
+                .where(PartyMember.party_id == s.party_id)
+            )).all()
+            members_by_party[s.party_id] = sorted(
+                [(pm.role, u.nick or u.username) for pm, u in rows],
+                key=lambda rn: ROLE_ORDER.get(rn[0], 9),
+            )
+
+    if not scheds:
+        return
+
+    # agrupa por dia da semana (do slot fixo)
+    by_day: dict[int, list[str]] = {}
+    for s in scheds:
+        wd = s.start_time.weekday()
+        start_m = s.start_time.hour * 60 + s.start_time.minute
+        end_m   = start_m + int((s.end_time - s.start_time).total_seconds() // 60)
+        hhmm = lambda m: f"{m // 60 % 24:02d}:{m % 60:02d}"
+        mem = ", ".join(f"{r[0]} {r[1]}" for r in members_by_party.get(s.party_id, [])) or "—"
+        by_day.setdefault(wd, []).append((start_m, f"`{hhmm(start_m)}–{hhmm(end_m)}` **{s.difficulty}** — {mem}"))
+
+    embed = discord.Embed(
+        title="📅 PTs da semana",
+        description="Horários fixos das parties. Use `/agendar` ou o site para mudanças.",
+        color=discord.Color.blurple(),
+    )
+    for wd in range(7):
+        if wd in by_day:
+            lines = [t for _, t in sorted(by_day[wd], key=lambda x: x[0])]
+            embed.add_field(name=WEEKDAYS_PT[wd], value="\n".join(lines), inline=False)
+
+    # apaga o resumo da semana passada (se ainda lembramos dele) e posta o novo
+    if _weekly_msg_id:
+        try:
+            await channel.get_partial_message(_weekly_msg_id).delete()
+        except Exception:
+            pass
+    msg = await channel.send(embed=embed)
+    _weekly_msg_id = msg.id
 
 
 async def _delete_warn(channel: discord.TextChannel, key: tuple[int, str]):

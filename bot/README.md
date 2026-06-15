@@ -20,7 +20,8 @@ Processo separado da API (`python -m bot.main`). Compartilha o banco com a API (
 - **`POKEMON_CHANNEL_IDS`** — conjunto de canais válidos (guard das reações).
 
 ### `scheduler.py` — Jobs periódicos (APScheduler) e notificações
-- **`start_scheduler(bot)`** — registra 3 jobs (cada 20s/20s/30s): `_check_schedules`, `_process_outbox`, `write_heartbeat`.
+- **`start_scheduler(bot)`** — registra os jobs: `_check_schedules` (20s), `_process_outbox` (20s), `write_heartbeat` (30s) e `_post_weekly_schedule` (cron: segunda 09:00).
+- **`_post_weekly_schedule(bot)`** — posta no canal de avisos um **resumo das PTs da semana** (por dia: horário, dificuldade e membros), apagando o resumo da semana anterior (`_weekly_msg_id`). Disparável na hora via `/resumo` (admin).
 - **`_check_schedules(bot)`** — coração das notificações. Roda rollover, **filtra convidados de fora** (`User.is_external` — sem conta no Discord da house, não dá pra pingar; externos de jogo `PartyMember.is_external` recebem aviso e confirmam normalmente, ficando de fora só do lembrete de pokémon), depois para cada membro não confirmado decide o aviso: **1º aviso** (N min antes, configurável por usuário), **1 min**, **30s**, **atraso** (a cada 30s). "Avisar e deletar": apaga o aviso anterior e some ao confirmar. Estado em `_warn_state` (podado a cada tick). Dispara o lembrete de pokémon dentro da janela de 30 min.
 - `_send_warning(...)` — monta/envia o embed do aviso (com reação ✅) e devolve a mensagem.
 - `_delete_warn(channel, key)` — apaga a mensagem de aviso atual.
