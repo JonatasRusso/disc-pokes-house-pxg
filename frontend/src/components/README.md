@@ -9,8 +9,8 @@ Casca do app: navbar enxuta (marca **💀 VKG House**, links **Início / PTs / C
 Seletor compacto de horário (substitui a grade no input). Props: `value` (`SlotValue` = `{weekday, time "HH:MM", durationMin}`), `onChange`, `parties?` (de `getCalendar`), `excludeScheduleId?`.
 - Campos: **dia da semana**, **início** (`input type=time`, passo 15 min), **duração** (`DURATION_OPTIONS`), e **"começar logo após outra PT"** (preenche dia+início com o fim da PT escolhida, mesmo em horário quebrado). Mostra o fim calculado e as PTs já marcadas no dia. Usado em **Agendar** e **Remarcar**. Converte para ISO via `buildStartIso` na página.
 
-## `WeeklySlots.tsx`
-Grade semanal (colunas = dias começando na **segunda**, linhas = horas). Props: `slots` (de `getFreeSlots`), `selected`, `onSelect`, `parties?`. Hoje usada **só no Calendário** (leitura). Aproxima por hora cheia (não mostra minutos/duração com precisão — redesenho na fase de UI).
+## `WeekCalendar.tsx`
+Agenda semanal **só leitura** (substitui a antiga `WeeklySlots`). Props: `parties` (de `getCalendar`). Eixo de horas + blocos **posicionados pelo minuto de início e dimensionados pela duração**; janela ajustada ao intervalo das PTs; cor por dificuldade (HARD/NW), 📌 = remarcada esta semana; tooltip com membros. Usado no **Calendário**.
 
 ## `MemberPicker.tsx`
 Seletor dos membros da PT ao agendar. Props: `members` (de `getMembers`), `excludeId` (o criador), `value`/`onChange` (lista de `PartyMemberInput`).
