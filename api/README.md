@@ -39,5 +39,6 @@ Camada de dados/HTTP usada pela **API** e importada também pelo **bot** (models
 
 ### `__init__.py` — marcador de pacote (vazio).
 
-## Subpasta
+## Subpastas
 - `routes/` — endpoints REST (ver README próprio).
+- `services/` — camada de serviço (lógica de negócio testável, sem Repository). `schedule_service.py`: recorrência, duração e conflito de horário.

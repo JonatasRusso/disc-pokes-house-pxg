@@ -19,10 +19,10 @@ Cada arquivo é um `APIRouter` registrado em `api/main.py`. Prefixo entre parên
 - `DELETE /{char_id}` — remove (valida dono).
 
 ## `schedules.py` — `/schedules` (núcleo das PTs)
-**Helpers:**
-- `next_occurrence(weekday, hour, minute, after)` — próxima data futura com aquele dia-da-semana + **hora:minuto** (recorrência semanal; passos de 15 min).
-- `_segments(start, end)` / `_segments_overlap(a, b)` / `_has_conflict(db, start, end, exclude, effective)` — conflito por **sobreposição de intervalos** (dia + minuto-do-dia, com duração variável e virada de meia-noite). `exclude` ignora um schedule (libera o slot da própria PT); `effective=True` usa o override desta semana (remarcação `once`), `False` usa o slot fixo (recorrente).
-- `ROLE_CAPACITY` — composição da PT: `{TANK:1, DPS:2, SUP:1}`. `DEFAULT_DURATION_MIN`=180, `SLOT_STEP_MIN`=15; `_validate_duration(min)`.
+> A **lógica de agendamento** vive em [`api/services/schedule_service.py`](../services/schedule_service.py) (camada de serviço testável, sem Repository): `next_occurrence(weekday, hour, minute, after)`, `_segments`/`_segments_overlap`/`_has_conflict(db, start, end, exclude, effective)` (conflito por sobreposição de intervalos — dia+minuto, duração variável, virada de meia-noite), `_eff_start`/`_eff_end`, `_validate_duration`, e as constantes de duração. As rotas importam de lá.
+
+**Helpers (nas rotas):**
+- `ROLE_CAPACITY` (de `api.enums`) — composição da PT: `{TANK:1, DPS:2, SUP:1}`.
 - `_occupied_character_ids(db)` — personagens já em PT ativa (regra 1 PT por personagem).
 - `_party_members_map(db, party_ids)` — membros por party (nick, role, character, is_coleader).
 - `_my_membership(db, schedule, user_id)` / `_can_manage(db, schedule, user)` — permissão (líder/co-líder/admin).

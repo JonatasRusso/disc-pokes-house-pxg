@@ -17,71 +17,16 @@ from api.timeutil import now_local
 from api.enums import (
     PartyRole, Difficulty, ROLE_CAPACITY, ROLE_VALUES, DIFFICULTY_VALUES, ACTIVE_STATUSES,
 )
+from api.services.schedule_service import (
+    DEFAULT_DURATION_MIN, _validate_duration, next_occurrence, _has_conflict,
+    _segments, _eff_start, _eff_end,
+)
 
 router = APIRouter(prefix="/schedules", tags=["schedules"])
 
 ROLES = set(ROLE_VALUES)
 DIFFICULTIES = set(DIFFICULTY_VALUES)
 SITE_URL = os.getenv("SITE_URL", "http://localhost:5173")
-
-# Horários flexíveis: passos de 15 min e duração configurável (início + duração)
-SLOT_STEP_MIN        = 15
-DEFAULT_DURATION_MIN = 180        # 3h (padrão, editável por PT)
-MIN_DURATION_MIN     = 15
-MAX_DURATION_MIN     = 12 * 60
-
-
-def _validate_duration(minutes: int) -> int:
-    if minutes % SLOT_STEP_MIN != 0 or not (MIN_DURATION_MIN <= minutes <= MAX_DURATION_MIN):
-        raise HTTPException(400, f"Duração inválida. Use múltiplos de {SLOT_STEP_MIN} min, "
-                                 f"entre {MIN_DURATION_MIN} e {MAX_DURATION_MIN}.")
-    return minutes
-
-
-def next_occurrence(weekday: int, hour: int, minute: int, after: datetime) -> datetime:
-    """Próxima data/hora (futuro) com o dia-da-semana e horário (hora:minuto) dados. Recorrência semanal."""
-    candidate = after.replace(hour=hour, minute=minute, second=0, microsecond=0)
-    days_ahead = (weekday - candidate.weekday()) % 7
-    candidate += timedelta(days=days_ahead)
-    if candidate <= after:
-        candidate += timedelta(days=7)
-    return candidate
-
-
-def _segments(start: datetime, end: datetime) -> list[tuple[int, int, int]]:
-    """Janela [start, end) como segmentos (dia_da_semana, min_início, min_fim<=1440),
-    dividindo na meia-noite (cobre PT que vira o dia). Base do conflito por intervalo."""
-    segs: list[tuple[int, int, int]] = []
-    wd = start.weekday()
-    cur = start.hour * 60 + start.minute
-    remaining = max(0, int((end - start).total_seconds() // 60))
-    while remaining > 0:
-        take = min(1440 - cur, remaining)
-        segs.append((wd, cur, cur + take))
-        remaining -= take
-        wd = (wd + 1) % 7
-        cur = 0
-    return segs
-
-
-def _segments_overlap(a: list[tuple[int, int, int]], b: list[tuple[int, int, int]]) -> bool:
-    return any(wa == wb and sa < eb and sb < ea for (wa, sa, ea) in a for (wb, sb, eb) in b)
-
-
-async def _has_conflict(db: AsyncSession, start: datetime, end: datetime,
-                        exclude: int | None = None, effective: bool = False) -> bool:
-    """Conflito por sobreposição de intervalos (dia+minuto, com duração e virada de dia).
-    `effective`: usa o override desta semana (remarcação só esta semana) ou o slot fixo recorrente."""
-    cand = _segments(start, end)
-    q = select(Schedule).where(Schedule.status.in_(ACTIVE_STATUSES))
-    if exclude is not None:
-        q = q.where(Schedule.id != exclude)
-    for s in (await db.execute(q)).scalars().all():
-        s_start = (s.override_start or s.start_time) if effective else s.start_time
-        s_end   = (s.override_end or s.end_time) if effective else s.end_time
-        if _segments_overlap(cand, _segments(s_start, s_end)):
-            return True
-    return False
 
 
 class PartyMemberIn(BaseModel):
@@ -118,14 +63,6 @@ class RescheduleIn(BaseModel):
     duration_minutes: int | None = None  # None = mantém a duração atual da PT
     scope: str = "once"    # "once" = só esta semana (override) | "all" = redefine o slot fixo
     force: bool = False    # ignora conflito com OUTRA PT (sobrescreve o horário mesmo ocupado)
-
-
-def _eff_start(s: Schedule) -> datetime:
-    return s.override_start or s.start_time
-
-
-def _eff_end(s: Schedule) -> datetime:
-    return s.override_end or s.end_time
 
 
 async def _party_members_map(db: AsyncSession, party_ids: list[int]) -> dict[int, list[dict]]:
