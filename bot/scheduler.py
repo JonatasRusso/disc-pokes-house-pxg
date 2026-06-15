@@ -68,6 +68,10 @@ OUTBOX_GIVEUP = timedelta(minutes=15)  # abandona item que não envia há 15 min
 NOTICE_TTL_S        = 30 * 60   # convites / saída / remarcação
 POKE_REMINDER_TTL_S = 40 * 60   # lembrete de pokémon (posta ~30 min antes; some no início da PT)
 
+# Carência da varredura de pokémons órfãos: só libera marcação mais antiga que isto
+# (protege marcação recém-feita, auto ou manual).
+POKE_ORPHAN_GRACE_S = 30 * 60
+
 
 async def _process_outbox(bot: discord.Client):
     """Envia mensagens enfileiradas pela API (convites de PT, etc)."""
@@ -262,8 +266,51 @@ async def _rollover_recurring(bot: discord.Client):
         await _rerender_pokemon(bot, p)
 
 
+async def _sweep_orphan_pokemons(bot: discord.Client):
+    """Libera pokémons cujo dono NÃO está em nenhuma PT ativa (PT cancelada, membro que
+    saiu/foi removido, ou resíduo antigo) e que foram marcados há mais que a carência.
+    Complementa o rollover (que solta no fim de cada ocorrência). Quem está em PT ativa
+    nunca é tocado; a carência protege marcação recém-feita (auto ou manual)."""
+    now = now_local()
+    cutoff = now - timedelta(seconds=POKE_ORPHAN_GRACE_S)
+    freed: list[Pokemon] = []
+    async with AsyncSessionLocal() as db:
+        active_ids = set((await db.execute(
+            select(PartyMember.user_id)
+            .join(Schedule, Schedule.party_id == PartyMember.party_id)
+            .where(Schedule.status.in_(["pending", "confirmed", "rescheduled"]))
+        )).scalars().all())
+
+        assigned = (await db.execute(
+            select(Pokemon).where(Pokemon.assigned_to.isnot(None))
+        )).scalars().all()
+
+        for p in assigned:
+            if p.assigned_to in active_ids:
+                continue  # dono em PT ativa → mantém
+            if p.assigned_at and p.assigned_at > cutoff:
+                continue  # marcado há pouco → carência
+            prev = p.assigned_to
+            p.assigned_to = None
+            p.assigned_at = None
+            db.add(History(
+                actor_id=prev, entity_type="pokemon", entity_id=p.id, action="unassigned",
+                detail=json.dumps({"pokemon": p.name, "auto": True, "orphan": True}),
+                happened_at=now,
+            ))
+            freed.append(p)
+
+        if freed:
+            await db.commit()
+            log.info(f"{len(freed)} pokémon(s) órfão(s) liberado(s).")
+
+    for p in freed:
+        await _rerender_pokemon(bot, p)
+
+
 async def _check_schedules(bot: discord.Client):
     await _rollover_recurring(bot)
+    await _sweep_orphan_pokemons(bot)
 
     now = now_local()
     channel = bot.get_channel(DISCORD_NOTIFY_CHANNEL_ID)
