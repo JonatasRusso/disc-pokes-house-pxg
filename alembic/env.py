@@ -14,10 +14,11 @@ from alembic import context
 # Garante que o pacote `api` é importável
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from api.models import Base  # noqa: E402
+from api.database import normalize_db_url  # noqa: E402
 
 config = context.config
 
-DB_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./discbot.db")
+DB_URL = normalize_db_url(os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./discbot.db"))
 config.set_main_option("sqlalchemy.url", DB_URL)
 
 if config.config_file_name is not None:

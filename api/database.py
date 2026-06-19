@@ -1,4 +1,5 @@
 import os
+import re
 import logging
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -6,7 +7,21 @@ from api.models import Base
 
 log = logging.getLogger(__name__)
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./discbot.db")
+
+def normalize_db_url(url: str) -> str:
+    """Permite usar a `DATABASE_URL` da referência do Railway (`${{Postgres.DATABASE_URL}}`),
+    que vem como `postgresql://...`. O app usa engine async, então convertemos o esquema
+    para `postgresql+asyncpg://` e removemos `sslmode` (o asyncpg usa `ssl`, não aceita
+    `sslmode` na URL). URLs já com `+asyncpg` ou `sqlite+aiosqlite` ficam intactas."""
+    for prefix in ("postgresql://", "postgres://"):
+        if url.startswith(prefix):
+            url = "postgresql+asyncpg://" + url[len(prefix):]
+            break
+    url = re.sub(r"[?&]sslmode=[^&]+", "", url)
+    return url
+
+
+DATABASE_URL = normalize_db_url(os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./discbot.db"))
 
 engine = create_async_engine(DATABASE_URL, echo=False)
 AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False)
