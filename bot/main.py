@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import sys
 import discord
 from discord.ext import commands
 from dotenv import load_dotenv
@@ -14,7 +15,11 @@ from bot.health import write_heartbeat, mark_command
 from api.database import init_db, AsyncSessionLocal
 from api.models import User
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+# Logs no stdout (o Railway marca stderr como "error" mesmo sendo INFO).
+logging.basicConfig(level=logging.INFO, stream=sys.stdout,
+                    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+# APScheduler loga cada execução de job no INFO — silencia o ruído de rotina.
+logging.getLogger("apscheduler").setLevel(logging.WARNING)
 log = logging.getLogger(__name__)
 
 COGS = [
